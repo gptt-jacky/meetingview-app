@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<!-- 麥克風權限實測頁：確認 Apps Script 網頁（HtmlService）裡能不能錄音、螢幕常亮，並記錄 10 分鐘錄音的檔案大小
+     最後更新: 2026/10/20 -->
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>麥克風測試</title>
+<style>
+:root {
+  --bg: #0f151b; --surface: #18212a; --fg: #e6ecf1; --muted: #93a1ae; --line: #2a3742;
+  --accent: #5bb6cc; --rec: #ff6b5e; --warn: #f0a640; --ok: #5fc58a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  font-size: 15px; line-height: 1.5; padding: 16px;
+}
+.app { max-width: 640px; margin: 0 auto; display: grid; gap: 14px; }
+h1 { margin: 0; font-size: 20px; }
+h2 { margin: 0 0 8px; font-size: 14px; color: var(--muted); letter-spacing: .08em; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+td { padding: 5px 0; border-top: 1px solid var(--line); vertical-align: top; }
+tr:first-child td { border-top: 0; }
+td:first-child { color: var(--muted); width: 42%; padding-right: 10px; }
+td:last-child { overflow-wrap: anywhere; }
+.ok { color: var(--ok); } .ng { color: var(--rec); } .warn { color: var(--warn); }
+.btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+button, select {
+  font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 12px; padding: 14px 12px; font-size: 16px; font-weight: 600;
+}
+button { cursor: pointer; }
+button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+button.stop { background: var(--rec); color: var(--bg); border-color: var(--rec); }
+button:disabled { opacity: .45; cursor: default; }
+.wide { grid-column: 1 / -1; }
+label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+select { padding: 10px; font-weight: 400; font-size: 15px; }
+.meter { height: 10px; border-radius: 5px; background: var(--bg); overflow: hidden; margin-top: 10px; }
+.meter div { height: 100%; width: 0; background: var(--ok); transition: width .1s; }
+.timer { font-size: 40px; font-weight: 600; text-align: center; margin: 6px 0; }
+audio { width: 100%; margin-top: 10px; }
+a.dl { color: var(--accent); font-size: 14px; }
+pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; color: var(--muted); max-height: 240px; overflow: auto; }
+textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>麥克風測試</h1>
+
+  <section class="card">
+    <h2>環境（自動偵測）</h2>
+    <table id="env"></table>
+  </section>
+
+  <section class="card">
+    <h2>測試</h2>
+    <div class="btns">
+      <button id="btnMic" class="primary">① 允許麥克風</button>
+      <button id="btnWake">② 螢幕常亮</button>
+      <label class="wide">錄音格式
+        <select id="selMime"></select>
+      </label>
+      <label class="wide">位元率
+        <select id="selBits">
+          <option value="">瀏覽器預設</option>
+          <option value="64000">64 kbps</option>
+          <option value="32000">32 kbps</option>
+        </select>
+      </label>
+      <button id="btnShort">③ 錄 10 秒</button>
+      <button id="btnLong">④ 錄 10 分鐘</button>
+      <button id="btnStop" class="stop wide" hidden>停止錄音</button>
+    </div>
+    <div class="meter" aria-label="音量"><div id="level"></div></div>
+    <div class="timer mono" id="timer">00:00</div>
+    <table id="rec"></table>
+    <audio id="player" controls hidden></audio>
+    <a id="dl" class="dl" hidden>下載這段（Apps Script 裡可能被擋）</a>
+  </section>
+
+  <section class="card">
+    <h2>結果（整段複製貼給 Jacky）</h2>
+    <textarea id="report" readonly></textarea>
+    <div class="btns" style="margin-top:10px">
+      <button id="btnCopy" class="wide">複製結果</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>事件紀錄</h2>
+    <pre id="log" class="mono"></pre>
+  </section>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const pad = (n) => String(n).padStart(2, "0");
+  const mmss = (s) => pad(Math.floor(s / 60)) + ":" + pad(Math.floor(s % 60));
+  const t0 = Date.now();
+
+  // 測試結果，最後全部印進「結果」
+  const result = {};
+  const logLines = [];
+
+  function log(msg) {
+    const line = mmss((Date.now() - t0) / 1000) + "  " + msg;
+    logLines.push(line);
+    $("log").textContent = logLines.join("\n");
+    render();
+  }
+
+  function row(table, key, value, cls) {
+    const tr = document.createElement("tr");
+    const a = document.createElement("td"); a.textContent = key;
+    const b = document.createElement("td"); b.textContent = value; if (cls) b.className = cls;
+    tr.append(a, b); table.append(tr);
+  }
+
+  function yn(v) { return v ? "可以" : "不行"; }
+
+  // ---------- 環境偵測 ----------
+  const MIME_CANDIDATES = [
+    "audio/mp4", "audio/mp4;codecs=mp4a.40.2", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"
+  ];
+
+  function inIframe() { try { return window.self !== window.top; } catch (e) { return true; } }
+
+  function policy(feature) {
+    const fp = document.permissionsPolicy || document.featurePolicy;
+    if (!fp || !fp.allowsFeature) return "瀏覽器不支援查詢";
+    try { return fp.allowsFeature(feature) ? "允許" : "被擋"; } catch (e) { return "查詢失敗"; }
+  }
+
+  async function detectEnv() {
+    const env = {
+      瀏覽器: navigator.userAgent,
+      網址來源: location.origin,
+      "HTTPS 安全環境": yn(window.isSecureContext),
+      包在框架裡: inIframe() ? "是" : "否",
+      "有 getUserMedia": yn(!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)),
+      "有 MediaRecorder": yn(typeof MediaRecorder !== "undefined"),
+      "有 Wake Lock": yn("wakeLock" in navigator),
+      "框架政策：麥克風": policy("microphone"),
+      "框架政策：螢幕常亮": policy("screen-wake-lock"),
+      麥克風權限狀態: "查詢中"
+    };
+    const supported = typeof MediaRecorder === "undefined" ? [] :
+      MIME_CANDIDATES.filter((m) => { try { return MediaRecorder.isTypeSupported(m); } catch (e) { return false; } });
+    env["支援的錄音格式"] = supported.length ? supported.join("、") : "無";
+    try {
+      const st = await navigator.permissions.query({ name: "microphone" });
+      env["麥克風權限狀態"] = st.state;
+    } catch (e) { env["麥克風權限狀態"] = "瀏覽器不支援查詢"; }
+    result.env = env;
+
+    const t = $("env"); t.textContent = "";
+    for (const k in env) {
+      const v = env[k];
+      const cls = v === "不行" || v === "被擋" || v === "denied" ? "ng" : (v === "可以" || v === "允許" || v === "granted" ? "ok" : "");
+      row(t, k, v, cls);
+    }
+
+    const sel = $("selMime");
+    const opt0 = document.createElement("option"); opt0.value = ""; opt0.textContent = "瀏覽器預設"; sel.append(opt0);
+    supported.forEach((m) => { const o = document.createElement("option"); o.value = m; o.textContent = m; sel.append(o); });
+    render();
+  }
+
+  // ---------- ① 麥克風 ----------
+  let stream = null, audioCtx = null, meterRaf = 0;
+
+  async function getMic() {
+    if (stream && stream.getAudioTracks().some((t) => t.readyState === "live")) return stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      result.mic = "成功";
+      log("麥克風：成功（" + (stream.getAudioTracks()[0].label || "未提供名稱") + "）");
+      stream.getAudioTracks().forEach((t) => {
+        t.addEventListener("ended", () => log("⚠ 麥克風被中斷（track ended）"));
+        t.addEventListener("mute", () => log("⚠ 麥克風靜音（track mute）"));
+        t.addEventListener("unmute", () => log("麥克風恢復（track unmute）"));
+      });
+      startMeter();
+      $("btnMic").textContent = "① 麥克風 OK";
+      return stream;
+    } catch (e) {
+      result.mic = "失敗：" + e.name + " " + e.message;
+      log("麥克風：失敗 " + e.name + "：" + e.message);
+      $("btnMic").textContent = "① 麥克風失敗";
+      throw e;
+    }
+  }
+
+  // 音量條：確認真的有收到聲音，不是錄到一片空白
+  function startMeter() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx = audioCtx || new AC();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      const src = audioCtx.createMediaStreamSource(stream);
+      const an = audioCtx.createAnalyser(); an.fftSize = 512;
+      src.connect(an);
+      const buf = new Uint8Array(an.fftSize);
+      cancelAnimationFrame(meterRaf);
+      const draw = () => {
+        an.getByteTimeDomainData(buf);
+        let sum = 0; for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+        $("level").style.width = Math.min(100, Math.sqrt(sum / buf.length) * 400) + "%";
+        meterRaf = requestAnimationFrame(draw);
+      };
+      draw();
+    } catch (e) { log("音量條無法啟動：" + e.message); }
+  }
+
+  // ---------- ② 螢幕常亮 ----------
+  let wakeLock = null;
+
+  async function keepAwake() {
+    if (!("wakeLock" in navigator)) { result.wake = "不支援"; log("螢幕常亮：瀏覽器不支援"); return; }
+    try {
+      wakeLock = await navigator.wakeLock.request("screen");
+      result.wake = "成功";
+      log("螢幕常亮：成功");
+      $("btnWake").textContent = "② 常亮 OK";
+      wakeLock.addEventListener("release", () => log("螢幕常亮已釋放"));
+    } catch (e) {
+      result.wake = "失敗：" + e.name + " " + e.message;
+      log("螢幕常亮：失敗 " + e.name + "：" + e.message);
+      $("btnWake").textContent = "② 常亮失敗";
+    }
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    log(document.hidden ? "⚠ 切出畫面（頁面被隱藏）" : "回到畫面");
+    if (!document.hidden && recorder && wakeLock && wakeLock.released) keepAwake();
+  });
+
+  // ---------- ③④ 錄音 ----------
+  let recorder = null, chunks = [], recStart = 0, tick = 0, autoStop = 0, lastUrl = "";
+
+  async function startRec(seconds) {
+    let s;
+    try { s = await getMic(); } catch (e) { return; }
+    if (seconds > 60) await keepAwake();
+
+    const opts = {};
+    if ($("selMime").value) opts.mimeType = $("selMime").value;
+    if ($("selBits").value) opts.audioBitsPerSecond = Number($("selBits").value);
+    try { recorder = new MediaRecorder(s, opts); }
+    catch (e) { log("建立錄音器失敗：" + e.name + "：" + e.message); return; }
+
+    chunks = [];
+    recorder.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) chunks.push(e.data); });
+    recorder.addEventListener("error", (e) => log("⚠ 錄音錯誤：" + (e.error ? e.error.name : "未知")));
+    recorder.addEventListener("stop", onStop);
+    recorder.start(); // 不切片：和正式錄音頁一樣，一段一個完整檔
+    recStart = Date.now();
+    log("開始錄音（目標 " + mmss(seconds) + "，格式 " + ($("selMime").value || "預設") + "，位元率 " + ($("selBits").value ? $("selBits").value / 1000 + " kbps" : "預設") + "）");
+
+    setBusy(true);
+    tick = setInterval(() => { $("timer").textContent = mmss((Date.now() - recStart) / 1000); }, 250);
+    autoStop = setTimeout(stopRec, seconds * 1000);
+  }
+
+  function stopRec() {
+    clearTimeout(autoStop);
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+  }
+
+  function onStop() {
+    clearInterval(tick);
+    const secs = (Date.now() - recStart) / 1000;
+    const type = recorder.mimeType || (chunks[0] && chunks[0].type) || "";
+    const blob = new Blob(chunks, { type: type });
+    const mb = blob.size / 1048576;
+    const kbps = secs > 0 ? blob.size * 8 / secs / 1000 : 0;
+    const per10 = kbps * 600 * 1000 / 8 / 1048576;
+
+    const r = {
+      長度: mmss(secs),
+      格式: type || "未回報",
+      位元率設定: $("selBits").value ? $("selBits").value / 1000 + " kbps" : "預設",
+      檔案大小: mb.toFixed(2) + " MB",
+      實際位元率: kbps.toFixed(0) + " kbps",
+      "換算 10 分鐘": per10.toFixed(2) + " MB",
+      "換算 15 分鐘": (per10 * 1.5).toFixed(2) + " MB"
+    };
+    result.recs = result.recs || [];
+    result.recs.push(r);
+    log("停止錄音：" + r.長度 + "，" + r.檔案大小 + "（" + r.實際位元率 + "）");
+
+    const t = $("rec"); t.textContent = "";
+    for (const k in r) row(t, k, r[k]);
+
+    if (lastUrl) URL.revokeObjectURL(lastUrl);
+    lastUrl = URL.createObjectURL(blob);
+    $("player").src = lastUrl; $("player").hidden = false;
+    const ext = type.indexOf("mp4") >= 0 ? "m4a" : (type.indexOf("ogg") >= 0 ? "ogg" : "webm");
+    $("dl").href = lastUrl; $("dl").download = "mic-test_" + mmss(secs).replace(":", "m") + "s." + ext; $("dl").hidden = false;
+
+    $("player").onerror = () => log("⚠ 播放失敗（這個格式在本機無法播放）");
+    $("player").onloadedmetadata = () => log("可以播放，播放器顯示長度 " + (isFinite($("player").duration) ? mmss($("player").duration) : "未知（webm 常見，不影響）"));
+
+    setBusy(false);
+    recorder = null;
+  }
+
+  function setBusy(on) {
+    $("btnShort").disabled = on; $("btnLong").disabled = on;
+    $("selMime").disabled = on; $("selBits").disabled = on;
+    $("btnStop").hidden = !on;
+    $("timer").classList.toggle("ng", on);
+  }
+
+  // ---------- 結果 ----------
+  function render() {
+    const out = ["【麥克風測試結果】", "時間：" + new Date().toLocaleString("zh-TW", { hour12: false })];
+    if (result.env) { out.push("", "■ 環境"); for (const k in result.env) out.push(k + "：" + result.env[k]); }
+    out.push("", "■ 測試");
+    out.push("麥克風：" + (result.mic || "未測"));
+    out.push("螢幕常亮：" + (result.wake || "未測"));
+    (result.recs || []).forEach((r, i) => {
+      out.push("", "■ 錄音 " + (i + 1));
+      for (const k in r) out.push(k + "：" + r[k]);
+    });
+    out.push("", "■ 事件紀錄");
+    out.push.apply(out, logLines);
+    $("report").value = out.join("\n");
+  }
+
+  async function copyReport() {
+    const text = $("report").value;
+    try { await navigator.clipboard.writeText(text); $("btnCopy").textContent = "已複製"; }
+    catch (e) {
+      // 框架裡常被擋：改成全選，讓使用者自己長按複製
+      $("report").focus(); $("report").select();
+      $("btnCopy").textContent = "請長按文字框手動複製";
+    }
+    setTimeout(() => { $("btnCopy").textContent = "複製結果"; }, 3000);
+  }
+
+  $("btnMic").addEventListener("click", () => { getMic().catch(() => {}); });
+  $("btnWake").addEventListener("click", keepAwake);
+  $("btnShort").addEventListener("click", () => startRec(10));
+  $("btnLong").addEventListener("click", () => startRec(600));
+  $("btnStop").addEventListener("click", stopRec);
+  $("btnCopy").addEventListener("click", copyReport);
+
+  detectEnv();
+})();
+</script>
+</body>
+</html>
