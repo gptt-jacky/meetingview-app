@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<!-- Meeting View 手機錄音頁：分段錄音（×48 放大、64 kbps）、先存手機再上傳到 Apps Script、⚡臨時會議
+     v2：嚴格判斷上傳成功、掉回應自動重送／定時再試、上傳提示、下載到手機備援
+     放在公開的 GitHub Pages：不能寫死任何網址、key、email、會議內容
+     最後更新: 2026/10/20 -->
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meeting View 錄音</title>
+<style>
+:root {
+  --bg: #0f151b; --surface: #18212a; --fg: #e6ecf1; --muted: #93a1ae; --line: #2a3742;
+  --accent: #5bb6cc; --rec: #ff6b5e; --warn: #f0a640; --ok: #5fc58a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  font-size: 16px; line-height: 1.5; padding: 16px;
+}
+.app { max-width: 560px; margin: 0 auto; display: grid; gap: 14px; }
+header { display: flex; align-items: center; gap: 10px; }
+h1 { margin: 0; font-size: 18px; white-space: nowrap; }
+.ver { font-size: 12px; color: var(--muted); }
+.gear { margin-left: auto; font-size: 22px; padding: 6px 12px; }
+h2 { margin: 0 0 10px; font-size: 14px; color: var(--muted); letter-spacing: .08em; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.notes { font-size: 13px; color: var(--muted); display: grid; gap: 2px; padding: 10px 14px; }
+.banner { border-radius: 12px; padding: 10px 14px; font-weight: 600; }
+.banner.ng { background: #3a1c1a; color: var(--rec); }
+.banner.warn { background: #3a2b14; color: var(--warn); }
+.banner.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.banner.row > span { flex: 1 1 180px; min-width: 0; }
+.banner .x { padding: 4px 10px; font-size: 16px; background: transparent; border: 0; color: inherit; }
+.banner .small { padding: 8px 12px; font-size: 14px; }
+.toast {
+  position: fixed; top: 12px; left: 16px; right: 16px; max-width: 528px; margin: 0 auto; z-index: 20;
+  background: var(--ok); color: var(--bg); font-weight: 700; border-radius: 12px; padding: 12px 14px; text-align: center;
+}
+.mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+input[type=text], input[type=url], input[type=password] {
+  font: inherit; font-size: 17px; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px; padding: 12px; width: 100%;
+}
+.check { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--fg); }
+.check input { width: 22px; height: 22px; }
+.btns { display: grid; gap: 10px; margin-top: 12px; }
+.btns.two { grid-template-columns: 1fr 1fr; }
+button {
+  font: inherit; font-weight: 700; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 14px; padding: 18px 12px; font-size: 18px; cursor: pointer;
+}
+button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+button.stop { background: var(--rec); color: var(--bg); border-color: var(--rec); }
+button.small { padding: 10px 12px; font-size: 15px; }
+button:disabled { opacity: .45; cursor: default; }
+.timer { font-size: 52px; font-weight: 600; text-align: center; line-height: 1.1; }
+.sub { text-align: center; color: var(--muted); }
+.meter { height: 14px; border-radius: 7px; background: var(--bg); overflow: hidden; margin-top: 12px; }
+.meter div { height: 100%; width: 0; background: var(--ok); }
+.db { text-align: center; font-size: 14px; color: var(--muted); margin-top: 4px; }
+.uploads { list-style: none; margin: 0; padding: 0; display: grid; }
+.uploads li { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.uploads li:first-child { border-top: 0; }
+.uploads .n { overflow-wrap: anywhere; min-width: 0; }
+.uploads .s { white-space: nowrap; }
+.uploads .acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.uploads .acts button { padding: 8px 12px; font-size: 14px; border-radius: 10px; }
+.uploads .acts button.warn { color: var(--warn); }
+.summary { margin-top: 8px; font-weight: 600; }
+.summary.big { font-size: 20px; line-height: 1.4; }
+.ok { color: var(--ok); } .ng { color: var(--rec); } .warn { color: var(--warn); }
+pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; color: var(--muted); max-height: 220px; overflow: auto; }
+.sheet { position: fixed; inset: 0; background: rgb(0 0 0 / .55); display: grid; place-items: center; padding: 16px; z-index: 10; }
+.sheet .card { width: min(480px, 100%); display: grid; gap: 12px; }
+.msg { font-size: 14px; min-height: 1.5em; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="toast" id="toast" role="status" hidden></div>
+<div class="app">
+  <header>
+    <div>
+      <h1>Meeting View 錄音</h1>
+      <div class="ver" id="ver"></div>
+    </div>
+    <button class="gear small" id="btnGear" aria-label="設定">⚙️</button>
+  </header>
+
+  <div class="banner ng" id="memBanner" hidden>❌ 手機暫存不能用，錄音會直接下載到手機</div>
+  <div class="banner ng row" id="rejectBanner" hidden>
+    <span id="rejectText"></span>
+    <button class="small" id="btnRejectGear">⚙️ 檢查設定</button>
+    <button class="x" id="btnRejectX" aria-label="關閉">✕</button>
+  </div>
+  <div class="banner ng row" id="failBanner" hidden>
+    <span id="failText"></span>
+    <button class="x" id="btnFailX" aria-label="關閉">✕</button>
+  </div>
+  <div class="banner warn row" id="leftBanner" hidden>
+    <span id="leftText"></span>
+    <button class="small" id="btnLeftRetry">全部重送</button>
+  </div>
+  <div class="banner warn row" id="persistBanner" hidden>
+    <span>⚠ 瀏覽器可能清掉暫存，請盡快上傳</span>
+    <button class="x" id="btnPersistX" aria-label="關閉">✕</button>
+  </div>
+  <div class="banner warn" id="spaceBanner" hidden></div>
+  <div class="banner warn" id="fakeBanner" hidden>假上傳模式：不會真的上傳</div>
+  <div class="banner ng" id="setupBanner" hidden>還沒設定上傳網址 → 按右上角 ⚙️</div>
+  <div class="banner warn" id="webmBanner" hidden>這台手機只能錄 webm：Studio 能不能讀 webm 需要查證</div>
+  <div class="banner warn" id="wakeBanner" hidden>這個瀏覽器不能保持螢幕常亮：請手動關閉自動鎖定</div>
+  <div class="card notes" id="notes">
+    <span id="noteLine">請用 Safari 或 Chrome 開，不要從 LINE 開</span>
+    <span>錄音時不要戴耳機</span>
+    <span>錄音中不要切 App、不要鎖螢幕</span>
+  </div>
+
+  <section class="card" id="startCard">
+    <h2>開始會議</h2>
+    <label>會議名稱（必填）
+      <input type="text" id="meetingName" maxlength="60" autocomplete="off" placeholder="例如：SUT 週會">
+    </label>
+    <div class="btns two">
+      <button class="primary" id="btnStart">開始錄音</button>
+      <button id="btnQuick">⚡ 臨時會議</button>
+    </div>
+    <div class="msg ng" id="startMsg"></div>
+  </section>
+
+  <section class="card" id="recCard" hidden>
+    <h2 id="recTitle">錄音中</h2>
+    <div class="timer mono" id="elapsed">00:00:00</div>
+    <div class="sub" id="segInfo">第 1 段</div>
+    <div class="sub" id="eventMsg" hidden></div>
+    <div class="meter" aria-label="音量"><div id="level"></div></div>
+    <div class="db mono" id="dbText">平均 -∞ dBFS</div>
+    <div class="banner warn" id="lowBanner" hidden style="margin-top:10px">太小聲，手機靠近一點</div>
+    <div class="banner ng" id="stoppedBanner" hidden style="margin-top:10px">
+      錄音停了（可能切過 App 或鎖過螢幕）
+      <div class="btns"><button class="primary small" id="btnResume">繼續錄音（接下一段）</button></div>
+    </div>
+    <div class="btns"><button class="stop" id="btnEnd">結束會議</button></div>
+  </section>
+
+  <section class="card" id="upCard" hidden>
+    <h2>上傳</h2>
+    <ul class="uploads" id="uploads"></ul>
+    <div class="summary" id="upSummary"></div>
+    <div class="btns two">
+      <button class="small" id="btnRetry" hidden>全部重送</button>
+      <button class="small" id="btnDlAll" hidden>全部下載到手機</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>紀錄</h2>
+    <pre class="mono" id="log"></pre>
+  </section>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="card">
+    <h2>設定</h2>
+    <label>Apps Script 部署網址
+      <input type="url" id="cfgUrl" autocomplete="off" spellcheck="false">
+    </label>
+    <label>上傳 key
+      <input type="password" id="cfgKey" autocomplete="off" spellcheck="false">
+    </label>
+    <label class="check"><input type="checkbox" id="cfgFake">假上傳（不打 API，測畫面用）</label>
+    <div class="msg" id="cfgMsg"></div>
+    <div class="btns two">
+      <button class="small" id="btnPing">測試連線</button>
+      <button class="small primary" id="btnSave">儲存</button>
+    </div>
+    <button class="small" id="btnClose">關閉</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const VERSION = "record v2（10/20）";
+  const $ = (id) => document.getElementById(id);
+  const pad = (n) => String(n).padStart(2, "0");
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const mb = (n) => (n / 1048576).toFixed(2) + " MB";
+  const params = new URLSearchParams(location.search);
+  const num = (k) => (Number(params.get(k)) > 0 ? Number(params.get(k)) : 0);
+
+  // ---------- 設定（localStorage 可能被擋，一律 try/catch）----------
+  function lsGet(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+  const cfg = {
+    url: () => lsGet("mv_api_url").trim(),
+    key: () => lsGet("mv_upload_key").trim(),
+    // 假上傳（測試用）：網址 ?fake=…（每次重新讀，測試中可以換模式）或 ⚙️ 的開關；模式見 fakeFetch()
+    fake: () => new URLSearchParams(location.search).get("fake") || (lsGet("mv_fake_upload") === "1" ? "1" : "")
+  };
+  const SEG_MS = (num("seg") || 600) * 1000;          // ?seg=秒數：測試用，縮短每段長度
+  const TIMEOUT_S = num("timeout");                   // ?timeout=秒數：測試用，縮短逾時
+  const AUTORETRY_MS = (num("autoretry") || 120) * 1000; // ?autoretry=秒數：測試用，縮短自動再試間隔
+  const RETRY_WAIT = [2, 5, 10];   // 上傳：失敗後等幾秒再試（共 3 次）
+  const EVENT_RETRY_WAIT = [2, 5]; // 臨時會議建日曆：同一個 requestId 再試 2 次
+  const LOW_SPACE_MB = 200;        // 1 小時約 30 MB（推算）
+  const GAIN = 48;
+  const BITRATE = 64000;
+
+  // ---------- 紀錄 ----------
+  const logLines = [];
+  function log(msg) {
+    const d = new Date();
+    logLines.push(pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()) + "  " + msg);
+    if (logLines.length > 300) logLines.shift();
+    $("log").textContent = logLines.slice().reverse().join("\n");
+  }
+
+  let toastTimer = 0;
+  function toast(text) {
+    $("toast").textContent = text; $("toast").hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { $("toast").hidden = true; }, 3000);
+  }
+
+  // ---------- 手機暫存（IndexedDB；不能用時退回記憶體＋每段直接下載）----------
+  // 一筆＝一個要上傳的東西：kind "segment"（音檔）或 "complete"（完成.json）
+  // status：pending 等待上傳／failed 重試後仍失敗／recording 會議進行中（只有 complete）
+  // lastError：上次失敗原因（成功才會整筆刪掉）；rejected：後端明確拒絕（key 不正確等）
+  const mem = new Map();
+  let dbp = null, useMem = false;
+  function openDb() {
+    if (!dbp) {
+      dbp = new Promise((res, rej) => {
+        const r = indexedDB.open("meetingview", 1);
+        r.onupgradeneeded = () => r.result.createObjectStore("segments", { keyPath: "name" });
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      });
+    }
+    return dbp;
+  }
+  async function tx(mode, fn) {
+    const db = await openDb();
+    return new Promise((res, rej) => {
+      const t = db.transaction("segments", mode);
+      const r = fn(t.objectStore("segments"));
+      t.oncomplete = () => res(r && r.result);
+      t.onerror = t.onabort = () => rej(t.error);
+    });
+  }
+  async function guard(dbFn, memFn) {
+    if (!useMem) {
+      try { return await dbFn(); }
+      catch (e) {
+        useMem = true;
+        $("memBanner").hidden = false;
+        log("❌ 手機暫存不能用（" + e.name + "）：每段錄完會直接下載到手機");
+      }
+    }
+    return memFn();
+  }
+  const store = {
+    put: (rec) => guard(() => tx("readwrite", (s) => s.put(rec)), () => { mem.set(rec.name, rec); }),
+    del: (name) => guard(() => tx("readwrite", (s) => s.delete(name)), () => { mem.delete(name); }),
+    all: () => guard(() => tx("readonly", (s) => s.getAll()), () => Array.from(mem.values()))
+  };
+
+  // ---------- API ----------
+  // 假上傳（測試用）：模擬 Apps Script 的各種回應
+  //   1 成功｜fail2 每個請求前 2 次連線失敗｜fail 一直連線失敗｜doget 回 doGet 的結果
+  //   empty 空白回應｜reject 後端拒絕（key 不正確）｜slow 一直不回（等逾時）
+  const fakeTries = {};
+  window.__mvFakeLog = [];
+  function fakeFetch(mode, body, signal) {
+    const id = body.name || body.requestId || body.action;
+    const tries = fakeTries[id] = (fakeTries[id] || 0) + 1;
+    const willOk = mode === "1" || (mode === "fail2" && tries > 2);
+    window.__mvFakeLog.push(Object.assign({}, body, { data: body.data ? "(" + body.data.length + " 字元)" : undefined, mode: mode, ok: willOk }));
+    return new Promise((res, rej) => {
+      const reply = (status, obj) => res({ status: status, text: async () => (obj === undefined ? "" : JSON.stringify(obj)) });
+      signal.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError")));
+      if (mode === "slow") return;
+      setTimeout(() => {
+        if (mode === "fail" || (mode === "fail2" && tries <= 2)) return rej(new TypeError("假上傳：模擬連線失敗"));
+        if (mode === "doget") return reply(200, { ok: true, service: "Meeting View", time: new Date().toISOString() });
+        if (mode === "empty") return reply(200);
+        if (mode === "reject") return reply(200, { ok: false, error: "key 不正確", action: body.action });
+        const r = { ok: true, action: body.action };
+        if (body.action === "createEvent") { r.eventId = "fake-event"; r.start = new Date().toISOString(); }
+        else if (body.action !== "ping") r.fileId = "fake";
+        reply(200, r);
+      }, 1000);
+    });
+  }
+
+  // 回應不是 JSON（空白、404 錯誤頁）→ 丟錯，交給 request() 重試
+  async function api(body) {
+    const fake = cfg.fake();
+    const url = cfg.url();
+    if (!fake && !url) throw new Error("還沒設定上傳網址");
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_S ? TIMEOUT_S * 1000 : (body.action === "upload" ? 120000 : 60000));
+    try {
+      // 只用 text/plain，不加其他標頭，避免 CORS 預檢
+      const res = fake ? await fakeFetch(fake, body, ctrl.signal) : await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(Object.assign({ key: cfg.key() }, body)),
+        signal: ctrl.signal
+      });
+      const text = await res.text();
+      try { return JSON.parse(text); }
+      catch (e) { throw new Error("回應不是 JSON（HTTP " + res.status + "）"); }
+    } finally { clearTimeout(timer); }
+  }
+
+  // 成功判斷（10/20 實測 Apps Script 約 1/10 掉回應，甚至拿到 doGet 的 ok:true）
+  // 回傳 { ok, r }｜{ reject: 原因 }（後端明確拒絕，不重試）｜{ retry: 原因 }
+  const NEED = { upload: "fileId", complete: "fileId", createEvent: "eventId" };
+  function judge(action, r) {
+    if (!r || typeof r !== "object") return { retry: "回應不正確" };
+    if (r.action !== undefined && r.action !== action) return { retry: "回應的 action 不符（" + r.action + "）" };
+    if (r.ok === false && r.error) return { reject: String(r.error) };
+    if (r.ok !== true) return { retry: "回應不正確" };
+    if (r.service !== undefined) return { retry: "收到的是 doGet 的回應" };
+    if (NEED[action] && !r[NEED[action]]) return { retry: "回應缺少 " + NEED[action] };
+    return { ok: true, r: r };
+  }
+
+  // 送出並判斷；掉回應就用同一個 body 重送（後端用檔名／requestId 去重）
+  // 回傳 { ok, r }｜{ reject: 原因 }｜{ fail: 最後的錯誤 }
+  async function request(body, waits, onRetry, label) {
+    let err = "";
+    for (let i = 0; i <= waits.length; i++) {
+      if (i > 0) { if (onRetry) onRetry(i, waits.length); await sleep(waits[i - 1] * 1000); }
+      let v;
+      try { v = judge(body.action, await api(body)); }
+      catch (e) { v = { retry: e.name === "AbortError" ? "逾時" : e.message }; }
+      if (v.ok || v.reject) return v;
+      err = v.retry;
+      log("失敗（第 " + (i + 1) + " 次）" + (label || body.action) + "：" + err);
+    }
+    return { fail: err };
+  }
+
+  function toBase64(blob) {
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(String(fr.result).split(",")[1] || "");
+      fr.onerror = () => rej(fr.error);
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  const segNum = (rec) => Number((rec.name.match(/_(\d+)\.\w+$/) || [])[1]) || "?";
+  // 「第 1、2 段」「完成檔」「第 3 段和完成檔」
+  function labels(list) {
+    const nums = list.filter((r) => r.kind === "segment").map(segNum);
+    const parts = [];
+    if (nums.length) parts.push("第 " + nums.join("、") + " 段");
+    if (list.some((r) => r.kind === "complete")) parts.push("完成檔");
+    return parts.join("和");
+  }
+
+  // ---------- 上傳佇列：一次一個，依序上傳；段落都傳完才送 complete ----------
+  const rows = new Map(); // name → 顯示狀態
+  let pumping = false, pumpAgain = false, sendingName = "", leftCount = 0;
+
+  function setRow(name, status) { rows.set(name, status); renderUploads(); }
+
+  async function pump() {
+    if (pumping) { pumpAgain = true; return; }
+    pumping = true;
+    try {
+      do {
+        pumpAgain = false;
+        for (;;) {
+          const recs = await store.all();
+          const byTime = (a, b) => a.createdAt - b.createdAt;
+          let next = recs.filter((r) => r.kind === "segment" && r.status === "pending").sort(byTime)[0];
+          if (!next) {
+            next = recs.filter((r) => r.kind === "complete" && r.status === "pending" &&
+              !recs.some((s) => s.kind === "segment" && s.prefix === r.prefix)).sort(byTime)[0];
+          }
+          if (!next) break;
+          await send(next);
+        }
+      } while (pumpAgain);
+    } finally {
+      pumping = false;
+      renderUploads();
+    }
+  }
+
+  async function send(rec) {
+    sendingName = rec.name;
+    setRow(rec.name, "上傳中");
+    let v;
+    try {
+      let body;
+      try {
+        body = rec.kind === "segment"
+          ? { action: "upload", name: rec.name, mimeType: rec.mimeType, data: await toBase64(rec.blob) }
+          : { action: "complete", name: rec.name, content: rec.content };
+      } catch (e) {
+        v = { fail: "讀取失敗：" + e.message };
+      }
+      if (body) v = await request(body, RETRY_WAIT, (i, n) => setRow(rec.name, "重試中（" + i + "/" + n + "）"), rec.name);
+    } finally { sendingName = ""; }
+
+    if (v.ok) {
+      await store.del(rec.name);
+      setRow(rec.name, "✅");
+      log("✅ " + rec.name + (v.r.duplicate ? "（已存在，視為成功）" : ""));
+      if (rec.kind === "segment") toast("✅ " + labels([rec]) + "已上傳");
+      if (rec.kind === "complete" && meeting && rec.prefix === meeting.prefix) meeting.completeSent = true;
+      return;
+    }
+    rec.status = "failed";
+    rec.lastError = v.reject || v.fail;
+    rec.rejected = !!v.reject;
+    await store.put(rec);
+    setRow(rec.name, "❌");
+    log(v.reject
+      ? "❌ " + rec.name + " 被後端拒絕，不重試（" + VERSION + "：" + v.reject + "）"
+      : "❌ " + rec.name + " 重試 3 次仍失敗，留在手機上，會自動再試（" + VERSION + "：" + v.fail + "）");
+  }
+
+  // 失敗的改回等待，重新上傳（全部重送、自動再試共用）
+  async function retryAll(why) {
+    const recs = await store.all();
+    let n = 0;
+    for (const r of recs) {
+      if (r.status === "failed") { r.status = "pending"; await store.put(r); setRow(r.name, "等待"); }
+      if (r.status === "pending") n++;
+    }
+    if (!n) return;
+    log(why + "：" + n + " 個檔案");
+    pump();
+  }
+  function autoRetry(why) {
+    if (pumping || (!cfg.fake() && !cfg.url())) return;
+    retryAll("自動再試（" + why + "）");
+  }
+
+  // ---------- 下載到手機（上傳不了時，手動放進雲端硬碟「錄音」）----------
+  const downloaded = new Set();
+  let delArmed = "", delTimer = 0;
+  function download(rec) {
+    const blob = rec.kind === "segment" ? rec.blob : new Blob([JSON.stringify(rec.content, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = rec.name; a.hidden = true;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    downloaded.add(rec.name);
+    log("下載到手機：" + rec.name + "（" + mb(blob.size) + "）");
+  }
+  async function downloadAll() {
+    const recs = (await store.all()).filter((r) => r.status !== "recording");
+    for (const r of recs) { download(r); await sleep(1000); }
+    renderUploads();
+  }
+  // 我已手動上傳：要按兩次才刪
+  async function manualDelete(name) {
+    clearTimeout(delTimer);
+    if (delArmed !== name) {
+      delArmed = name;
+      delTimer = setTimeout(() => { delArmed = ""; renderUploads(); }, 4000);
+      renderUploads();
+      return;
+    }
+    delArmed = "";
+    await store.del(name);
+    rows.delete(name); downloaded.delete(name);
+    log("已手動上傳，刪除手機上的 " + name);
+    renderUploads();
+    pump(); // 段落都處理完，完成檔就能送
+  }
+
+  function smallBtn(text, cls, fn) {
+    const b = document.createElement("button");
+    b.textContent = text; if (cls) b.className = cls;
+    b.addEventListener("click", fn);
+    return b;
+  }
+
+  let failDismissed = "", rejectDismissed = "";
+  async function renderUploads() {
+    const recs = await store.all();
+    const byName = new Map(recs.map((r) => [r.name, r]));
+    // 暫存裡有、但畫面還沒列的（例如上次沒傳完的）補上
+    recs.forEach((r) => {
+      if (!rows.has(r.name)) rows.set(r.name, r.status === "failed" ? "❌" : (r.status === "recording" ? "會議中" : "等待"));
+    });
+    const ul = $("uploads"); ul.textContent = "";
+    rows.forEach((st, name) => {
+      const li = document.createElement("li");
+      const n = document.createElement("span"); n.className = "n mono"; n.textContent = name;
+      const s = document.createElement("span"); s.className = "s " + (st === "✅" ? "ok" : st === "❌" ? "ng" : "warn"); s.textContent = st;
+      li.append(n, s);
+      const rec = byName.get(name);
+      if (rec && rec.status !== "recording" && name !== sendingName) {
+        const acts = document.createElement("div"); acts.className = "acts";
+        acts.append(smallBtn("下載", "", () => { download(rec); renderUploads(); }));
+        if (downloaded.has(name)) {
+          acts.append(smallBtn(delArmed === name ? "再按一次確認刪除" : "我已手動上傳，刪除這筆", "warn", () => manualDelete(name)));
+        }
+        li.append(acts);
+      }
+      ul.append(li);
+    });
+    $("upCard").hidden = rows.size === 0;
+
+    const left = recs.filter((r) => r.status !== "recording");
+    leftCount = left.length;
+    const segsLeft = left.filter((r) => r.kind === "segment").length;
+
+    // 失敗橫幅：直到成功或使用者按掉（同一批失敗按掉後不再跳）
+    const errs = left.filter((r) => r.lastError && !r.rejected);
+    const failKey = errs.map((r) => r.name).join("|");
+    $("failText").textContent = "❌ " + labels(errs) + "上傳失敗，" + (errs.some((r) => r.kind === "segment") ? "錄音" : "") + "還在手機上，會自動再試";
+    $("failBanner").hidden = !failKey || failKey === failDismissed;
+    const rej = left.find((r) => r.rejected);
+    const rejKey = rej ? rej.lastError : "";
+    $("rejectText").textContent = "❌ 上傳被拒絕：" + rejKey;
+    $("rejectBanner").hidden = !rejKey || rejKey === rejectDismissed;
+    // 上次沒傳完的（不是這場會議的）
+    const old = left.filter((r) => !meeting || r.prefix !== meeting.prefix).length;
+    $("leftText").textContent = "手機上有 " + old + " 個檔案還沒上傳";
+    $("leftBanner").hidden = !old;
+
+    const ended = !meeting || meeting.ended;
+    let text = "", cls = "", big = false;
+    if (pumping && left.length) { text = "上傳中…（還有 " + left.length + " 個）"; cls = "warn"; }
+    else if (left.some((r) => r.status === "failed")) {
+      text = segsLeft ? "❌ 有 " + segsLeft + " 段還沒上傳，錄音都還在手機上" : "❌ 完成檔還沒上傳，還在手機上";
+      cls = "ng"; big = ended;
+    }
+    else if (left.length) { text = "有 " + left.length + " 個檔案等待上傳"; cls = "warn"; }
+    else if (meeting && meeting.ended && meeting.completeSent) {
+      text = "✅ 全部上傳完成（" + meeting.segments + " 段＋完成檔）"; cls = "ok"; big = true;
+    }
+    $("upSummary").textContent = text;
+    $("upSummary").className = "summary " + cls + (big ? " big" : "");
+    $("btnRetry").hidden = pumping || !left.length;
+    $("btnDlAll").hidden = !left.length;
+  }
+
+  $("btnRetry").addEventListener("click", () => retryAll("全部重送"));
+  $("btnLeftRetry").addEventListener("click", () => retryAll("全部重送"));
+  $("btnDlAll").addEventListener("click", downloadAll);
+  $("btnFailX").addEventListener("click", async () => {
+    failDismissed = (await store.all()).filter((r) => r.status !== "recording" && r.lastError && !r.rejected).map((r) => r.name).join("|");
+    $("failBanner").hidden = true;
+  });
+  $("btnRejectX").addEventListener("click", () => { rejectDismissed = $("rejectText").textContent.replace("❌ 上傳被拒絕：", ""); $("rejectBanner").hidden = true; });
+  $("btnPersistX").addEventListener("click", () => { $("persistBanner").hidden = true; });
+
+  // ---------- 錄音 ----------
+  let meeting = null;      // { name, prefix, start, eventId, eventP, segments, ended, completeSent }
+  let audioCtx = null, micStream = null, dest = null, analyser = null;
+  let recorder = null, segNo = 0, segTimer = 0, mimeType = "", ext = "m4a";
+  let wakeLock = null, hiddenAt = 0, elapsedTimer = 0;
+
+  function cleanName(s) {
+    return s.replace(/[\/\\:*?"<>|_]/g, "-").trim().slice(0, 30).trim();
+  }
+  function prefixOf(d, name) {
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "_" + pad(d.getHours()) + pad(d.getMinutes()) + "_" + name;
+  }
+
+  function pickMime() {
+    const can = (m) => { try { return MediaRecorder.isTypeSupported(m); } catch (e) { return false; } };
+    if (can("audio/mp4")) return { mime: "audio/mp4", ext: "m4a" };
+    $("webmBanner").hidden = false;
+    log("⚠ 不支援 audio/mp4，改錄 webm（Studio 能不能讀需要查證）");
+    return { mime: "audio/webm;codecs=opus", ext: "webm" };
+  }
+
+  // 麥克風（聲音處理全關）→ ×48 → 限幅 → 錄音串流；音量條量的是放大後的聲音（參數照 mic-test v6 實測）
+  async function openMic() {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    const src = audioCtx.createMediaStreamSource(micStream);
+    const gain = audioCtx.createGain(); gain.gain.value = GAIN;
+    const limiter = audioCtx.createDynamicsCompressor();
+    limiter.threshold.value = -6; limiter.knee.value = 0; limiter.ratio.value = 20;
+    limiter.attack.value = 0.003; limiter.release.value = 0.25;
+    dest = audioCtx.createMediaStreamDestination();
+    analyser = audioCtx.createAnalyser(); analyser.fftSize = 2048;
+    src.connect(gain); gain.connect(limiter); limiter.connect(dest); limiter.connect(analyser);
+    const t = micStream.getAudioTracks()[0];
+    log("麥克風：" + (t.label || "未提供名稱"));
+    t.addEventListener("ended", () => { log("⚠ 麥克風被中斷"); checkStopped(); });
+  }
+
+  function startSegment() {
+    segNo++;
+    const name = meeting.prefix + "_" + pad(segNo) + "." + ext;
+    const chunks = [];
+    const rec = new MediaRecorder(dest.stream, { mimeType: mimeType, audioBitsPerSecond: BITRATE });
+    rec.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) chunks.push(e.data); });
+    rec.addEventListener("error", (e) => log("⚠ 錄音錯誤：" + (e.error ? e.error.name : "未知")));
+    // stop 事件是非同步的：結束會議時要等每一段都存好，才能算段數
+    allSaves.push(new Promise((resolve) => {
+      rec.addEventListener("stop", () => resolve(saveSegment(name, chunks, rec.mimeType || mimeType)));
+    }));
+    rec.start();
+    recorder = rec;
+    $("segInfo").textContent = "第 " + segNo + " 段";
+    setRow(name, "錄音中");
+    clearTimeout(segTimer);
+    segTimer = setTimeout(rotate, SEG_MS);
+  }
+
+  // 每段時間到：停掉舊的，立刻用同一個串流開新的
+  function rotate() {
+    if (!recorder || meeting.ended) return;
+    const old = recorder;
+    old.stop();
+    startSegment();
+  }
+
+  let saving = Promise.resolve(), allSaves = [];
+  function saveSegment(name, chunks, type) {
+    saving = saving.then(async () => {
+      const blob = new Blob(chunks, { type: type });
+      if (!blob.size) { rows.delete(name); renderUploads(); log("⚠ " + name + " 沒有錄到資料，略過"); return; }
+      meeting.segments++;
+      const rec = { kind: "segment", name: name, prefix: meeting.prefix, mimeType: type.split(";")[0],
+        blob: blob, status: "pending", createdAt: Date.now() };
+      await store.put(rec);
+      await saveComplete("recording");
+      setRow(name, "等待");
+      log(labels([rec]) + "存好（" + mb(blob.size) + "）");
+      if (useMem) download(rec); // 暫存不能用：頁面關掉就沒了，先下載一份
+      pump();
+    });
+    return saving;
+  }
+
+  function saveComplete(status) {
+    return store.put({
+      kind: "complete", name: meeting.prefix + "_完成.json", prefix: meeting.prefix, status: status, createdAt: meeting.createdAt,
+      content: { meeting: meeting.name, start: meeting.start, calendarEventId: meeting.eventId || "", attendees: [], segments: meeting.segments }
+    });
+  }
+
+  async function checkSpace() {
+    try {
+      const e = await navigator.storage.estimate();
+      const free = (e.quota - e.usage) / 1048576;
+      log("暫存可用空間約 " + Math.round(free) + " MB");
+      if (free < LOW_SPACE_MB) {
+        $("spaceBanner").textContent = "⚠ 手機暫存空間只剩約 " + Math.round(free) + " MB（1 小時約 30 MB），請先清出空間";
+        $("spaceBanner").hidden = false;
+      }
+    } catch (e) { log("⚠ 無法檢查剩餘空間"); }
+  }
+
+  // ⚡臨時會議：建日曆和開始錄音同時進行（建日曆最久要等好幾分鐘，不能讓會議等）
+  // 同一個 requestId 重送，後端 v0.3 不會建第二個活動；都失敗照樣錄音
+  function createEvent(title, name) {
+    const requestId = prefixOf(new Date(), name) + "_" + Math.random().toString(36).slice(2).padEnd(6, "0").slice(0, 6);
+    const res = { eventId: "", mine: null };
+    $("eventMsg").textContent = "📅 建立日曆活動中…"; $("eventMsg").hidden = false;
+    res.done = request({ action: "createEvent", title: title, minutes: 60, requestId: requestId }, EVENT_RETRY_WAIT, null, "建立日曆活動")
+      .then(async (v) => {
+        if (v.ok) {
+          res.eventId = v.r.eventId;
+          $("eventMsg").textContent = "📅 日曆活動已建立";
+          log("📅 日曆活動已建立" + (v.r.duplicate ? "（重送，沿用同一個活動）" : ""));
+          if (res.mine) { res.mine.eventId = res.eventId; if (!res.mine.ended) await saveComplete("recording"); }
+        } else {
+          $("eventMsg").textContent = "⚠ 日曆活動建立失敗，照樣錄音";
+          log("⚠ 日曆活動建立失敗，照樣錄音（" + VERSION + "：" + (v.reject || v.fail) + "）");
+        }
+      });
+    return res;
+  }
+
+  async function startMeeting(quick) {
+    $("startMsg").textContent = "";
+    const raw = $("meetingName").value.trim();
+    const name = cleanName(raw);
+    if (!name) { $("startMsg").textContent = "請先輸入會議名稱"; $("meetingName").focus(); return; }
+    if (!cfg.fake() && !cfg.url()) { $("startMsg").textContent = "還沒設定上傳網址：按右上角 ⚙️（錄音會先存在手機）"; }
+    if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices) {
+      $("startMsg").textContent = "這個瀏覽器不能錄音（" + VERSION + "）"; return;
+    }
+    // iOS 規定：AudioContext 要在按鈕事件裡建立／resume
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx = audioCtx || new AC();
+      audioCtx.resume();
+    } catch (e) { $("startMsg").textContent = "音訊無法啟動：" + e.message; return; }
+    $("btnStart").disabled = true; $("btnQuick").disabled = true;
+    checkSpace();
+
+    $("eventMsg").hidden = true;
+    const ev = quick ? createEvent(raw.slice(0, 60), name) : null;
+
+    try { await openMic(); }
+    catch (e) {
+      $("startMsg").textContent = "拿不到麥克風：" + e.name + "（" + VERSION + "）";
+      log("❌ 麥克風失敗：" + e.name + "：" + e.message);
+      $("btnStart").disabled = false; $("btnQuick").disabled = false;
+      return;
+    }
+    const pm = pickMime(); mimeType = pm.mime; ext = pm.ext;
+
+    const now = new Date();
+    meeting = { name: raw, prefix: prefixOf(now, name), start: now.toISOString(), eventId: ev ? ev.eventId : "",
+      eventP: ev ? ev.done : null, segments: 0, ended: false, completeSent: false, createdAt: Date.now(), t0: Date.now() };
+    if (ev) ev.mine = meeting;
+    segNo = 0;
+    await saveComplete("recording");
+    log("開始錄音：" + meeting.prefix + "（" + VERSION + "，每段 " + SEG_MS / 1000 + " 秒）");
+
+    $("startCard").hidden = true; $("recCard").hidden = false;
+    $("recTitle").textContent = "錄音中：" + raw;
+    startSegment();
+    keepAwake();
+    elapsedTimer = setInterval(() => {
+      const s = Math.floor((Date.now() - meeting.t0) / 1000);
+      $("elapsed").textContent = pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60);
+    }, 500);
+  }
+
+  // 結束要按兩次，避免誤觸
+  let endArmed = 0;
+  $("btnEnd").addEventListener("click", () => {
+    if (!endArmed) {
+      $("btnEnd").textContent = "再按一次確認結束";
+      endArmed = setTimeout(() => { endArmed = 0; $("btnEnd").textContent = "結束會議"; }, 4000);
+      return;
+    }
+    clearTimeout(endArmed); endArmed = 0;
+    endMeeting();
+  });
+
+  async function endMeeting() {
+    meeting.ended = true;
+    clearTimeout(segTimer); clearInterval(elapsedTimer);
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    recorder = null;
+    await Promise.all(allSaves);
+    allSaves = [];
+    if (micStream) micStream.getTracks().forEach((t) => t.stop());
+    if (wakeLock) { try { await wakeLock.release(); } catch (e) {} wakeLock = null; }
+    $("btnEnd").textContent = "結束會議";
+    // 完成檔要帶日曆活動 ID：等建日曆的結果（失敗也會結束）
+    if (meeting.eventP) { $("btnEnd").disabled = true; log("等日曆活動建立結果…"); await meeting.eventP; $("btnEnd").disabled = false; }
+    $("recCard").hidden = true; $("startCard").hidden = false;
+    $("btnStart").disabled = false; $("btnQuick").disabled = false;
+    if (meeting.segments > 0) {
+      await saveComplete("pending");
+      setRow(meeting.prefix + "_完成.json", "等待");
+      log("會議結束，共 " + meeting.segments + " 段");
+    } else {
+      await store.del(meeting.prefix + "_完成.json");
+      rows.delete(meeting.prefix + "_完成.json");
+      log("⚠ 會議結束，但沒有錄到任何一段");
+    }
+    pump();
+  }
+
+  // 錄音停了的處理：切回畫面時檢查，停了就警告，讓使用者接下一段
+  function isStopped() {
+    if (!meeting || meeting.ended) return false;
+    const t = micStream && micStream.getAudioTracks()[0];
+    return !recorder || recorder.state === "inactive" || !t || t.readyState === "ended";
+  }
+  function checkStopped() {
+    if (isStopped()) {
+      $("stoppedBanner").hidden = false;
+      log("⚠ 錄音已經停了（" + VERSION + "）");
+    }
+  }
+  $("btnResume").addEventListener("click", async () => {
+    try {
+      audioCtx.resume();
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+      if (micStream) micStream.getTracks().forEach((t) => t.stop());
+      await openMic();
+      startSegment();
+      keepAwake();
+      $("stoppedBanner").hidden = true;
+      log("繼續錄音：第 " + segNo + " 段");
+    } catch (e) { log("❌ 無法繼續錄音：" + e.name + "：" + e.message); }
+  });
+
+  // ---------- 音量：平均 dBFS、連續 10 秒低於 -40 提醒 ----------
+  let avgPow = 0, lowSince = 0;
+  const buf = new Float32Array(2048);
+  setInterval(() => {
+    if (!analyser || !meeting || meeting.ended) return;
+    analyser.getFloatTimeDomainData(buf);
+    let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    const pow = sum / buf.length;
+    avgPow = avgPow * 0.9 + pow * 0.1; // 約 1 秒的移動平均
+    const db = avgPow > 0 ? 10 * Math.log10(avgPow) : -Infinity;
+    $("level").style.width = Math.min(100, Math.sqrt(pow) * 300) + "%";
+    $("dbText").textContent = "平均 " + (isFinite(db) ? db.toFixed(1) : "-∞") + " dBFS";
+    if (db < -40) { lowSince = lowSince || Date.now(); } else { lowSince = 0; }
+    $("lowBanner").hidden = !(lowSince && Date.now() - lowSince >= 10000);
+  }, 100);
+
+  // ---------- 螢幕常亮 ----------
+  async function keepAwake() {
+    if (!("wakeLock" in navigator)) { $("wakeBanner").hidden = false; return; }
+    try { wakeLock = await navigator.wakeLock.request("screen"); }
+    catch (e) { $("wakeBanner").hidden = false; log("⚠ 螢幕常亮失敗：" + e.name); }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) autoRetry("回到畫面");
+    if (!meeting || meeting.ended) return;
+    if (document.hidden) { hiddenAt = Date.now(); log("⚠ 切到背景"); return; }
+    log("回到畫面（離開 " + Math.round((Date.now() - hiddenAt) / 1000) + " 秒）");
+    if (audioCtx && audioCtx.state !== "running") audioCtx.resume();
+    keepAwake();
+    checkStopped();
+  });
+
+  // ---------- 自動再試、離開提醒 ----------
+  window.addEventListener("online", () => autoRetry("網路恢復"));
+  setInterval(() => autoRetry("定時"), AUTORETRY_MS);
+  // iOS 可能不支援，盡力而為
+  window.addEventListener("beforeunload", (e) => {
+    if ((meeting && !meeting.ended) || leftCount > 0) { e.preventDefault(); e.returnValue = ""; }
+  });
+
+  // ---------- 設定畫面 ----------
+  function openSettings() {
+    $("cfgUrl").value = cfg.url(); $("cfgKey").value = cfg.key();
+    $("cfgFake").checked = lsGet("mv_fake_upload") === "1";
+    $("cfgMsg").textContent = ""; $("sheet").hidden = false;
+  }
+  function saveSettings() {
+    const ok = lsSet("mv_api_url", $("cfgUrl").value.trim()) &&
+      lsSet("mv_upload_key", $("cfgKey").value.trim()) &&
+      lsSet("mv_fake_upload", $("cfgFake").checked ? "1" : "");
+    $("cfgMsg").textContent = ok ? "已儲存" : "無法儲存（瀏覽器擋住本機儲存，例如無痕模式）";
+    $("cfgMsg").className = "msg " + (ok ? "ok" : "ng");
+    refreshBanners();
+    return ok;
+  }
+  $("btnGear").addEventListener("click", openSettings);
+  $("btnRejectGear").addEventListener("click", openSettings);
+  $("btnClose").addEventListener("click", () => { $("sheet").hidden = true; });
+  $("btnSave").addEventListener("click", () => { if (saveSettings()) autoRetry("設定已儲存"); });
+  $("btnPing").addEventListener("click", async () => {
+    saveSettings();
+    $("cfgMsg").textContent = "連線中…"; $("cfgMsg").className = "msg";
+    const v = await request({ action: "ping" }, [], null, "測試連線");
+    $("cfgMsg").textContent = v.ok ? "連線 OK" + (cfg.fake() ? "（假上傳模式）" : "") : "連線失敗：" + (v.reject || v.fail) + "（" + VERSION + "）";
+    $("cfgMsg").className = "msg " + (v.ok ? "ok" : "ng");
+  });
+
+  function refreshBanners() {
+    $("fakeBanner").hidden = !cfg.fake();
+    $("setupBanner").hidden = !!(cfg.fake() || cfg.url());
+  }
+
+  $("btnStart").addEventListener("click", () => startMeeting(false));
+  $("btnQuick").addEventListener("click", () => startMeeting(true));
+
+  // ---------- 開頁 ----------
+  $("ver").textContent = VERSION;
+  if (/\bLine\//.test(navigator.userAgent)) {
+    $("noteLine").textContent = "⚠ 現在是從 LINE 開的：請改用 Safari 或 Chrome 開這個網址";
+    $("notes").classList.add("banner", "ng");
+  }
+  refreshBanners();
+  if (cfg.fake()) log("假上傳模式（" + cfg.fake() + "）");
+  if (SEG_MS !== 600000) log("測試：每段 " + SEG_MS / 1000 + " 秒");
+
+  // 要求持久儲存：沒有的話瀏覽器空間不夠時可能清掉暫存（提醒只顯示一次）
+  (async function askPersist() {
+    let ok = false;
+    try {
+      const s = navigator.storage;
+      ok = !!(s && s.persist && ((s.persisted && await s.persisted()) || await s.persist()));
+      log("持久儲存：" + (!s || !s.persist ? "不支援" : ok ? "已允許" : "被拒絕"));
+    } catch (e) { log("⚠ 持久儲存失敗：" + e.name); }
+    if (!ok && !lsGet("mv_persist_warned")) {
+      lsSet("mv_persist_warned", "1");
+      $("persistBanner").hidden = false;
+    }
+  })();
+
+  // 待重送：上次沒傳完的段落和完成檔；會議中途關掉的，完成檔改成等待上傳；開頁就自動再試
+  (async function restore() {
+    try {
+      const recs = await store.all();
+      for (const r of recs) {
+        if (r.kind === "complete" && r.status === "recording") {
+          if (r.content.segments > 0) {
+            r.status = "pending";
+            await store.put(r);
+            log("⚠ 上次的會議沒有正常結束：" + r.prefix + "（已存的 " + r.content.segments + " 段會照常上傳）");
+          } else {
+            await store.del(r.name); // 一段都沒存到：後端不收 segments 0 的完成檔
+          }
+        }
+      }
+      const left = (await store.all()).length;
+      if (left) log("手機上有 " + left + " 個檔案還沒上傳");
+      await renderUploads();
+      autoRetry("開頁");
+    } catch (e) { log("讀取待重送清單失敗：" + e.message); }
+  })();
+  log("開啟 " + VERSION);
+})();
+</script>
+</body>
+</html>
