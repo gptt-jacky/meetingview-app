@@ -67,8 +67,17 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
       <button id="btnWake">② 螢幕常亮</button>
       <label class="wide">聲音處理（錄音悶、像電話 → 選「關」）
         <select id="selProc">
-          <option value="off">關：原音（建議會議用）</option>
-          <option value="on">開：瀏覽器預設（降噪＋回音消除＋自動音量）</option>
+          <option value="off">關：原音</option>
+          <option value="agc">只開自動音量（降噪、回音消除關）</option>
+          <option value="on">全開：瀏覽器預設（降噪＋回音消除＋自動音量）</option>
+        </select>
+      </label>
+      <label class="wide">軟體放大（錄音太小聲時用，按錄音前選）
+        <select id="selGain">
+          <option value="1">×1 不放大</option>
+          <option value="4">×4</option>
+          <option value="8">×8</option>
+          <option value="16">×16</option>
         </select>
       </label>
       <label class="wide">錄音格式
@@ -189,8 +198,9 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
   // 瀏覽器預設會開降噪、回音消除、自動音量；iPhone 開了會變成「電話音質」（悶、像在水裡）
   function audioConstraints(proc) {
     if (proc === "on") return true;
-    return { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+    return { echoCancellation: false, noiseSuppression: false, autoGainControl: proc === "agc" };
   }
+  const procName = (p) => ({ off: "關", agc: "只開自動音量", on: "全開" })[p] || p;
 
   async function getMic() {
     const proc = $("selProc").value;
@@ -201,7 +211,7 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
       streamProc = proc;
       result.mic = "成功";
       log("麥克風：成功（" + (stream.getAudioTracks()[0].label || "未提供名稱") + "）");
-      log("聲音處理：" + (proc === "on" ? "開" : "關") + "；實際設定 " + trackSettings());
+      log("聲音處理：" + procName(proc) + "；實際設定 " + trackSettings());
       stream.getAudioTracks().forEach((t) => {
         t.addEventListener("ended", () => log("⚠ 麥克風被中斷（track ended）"));
         t.addEventListener("mute", () => log("⚠ 麥克風靜音（track mute）"));
@@ -228,26 +238,43 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
       "、自動音量 " + onoff(st.autoGainControl) + "、取樣率 " + (st.sampleRate || "?") + "、聲道 " + (st.channelCount || "?");
   }
 
-  // 音量條：確認真的有收到聲音，不是錄到一片空白
+  // 音量條＋軟體放大：麥克風 → 放大 → 限幅（避免爆音）→ 錄音用的串流；音量條量的是放大後的聲音
+  let gainNode = null, procDest = null;
+  const stat = { peak: 0, sumSq: 0, n: 0, on: false };
+  const dbfs = (v) => v > 0 ? (20 * Math.log10(v)).toFixed(1) : "-∞";
+
   function startMeter() {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       audioCtx = audioCtx || new AC();
       if (audioCtx.state === "suspended") audioCtx.resume();
       const src = audioCtx.createMediaStreamSource(stream);
-      const an = audioCtx.createAnalyser(); an.fftSize = 512;
-      src.connect(an);
-      const buf = new Uint8Array(an.fftSize);
+      gainNode = audioCtx.createGain();
+      gainNode.gain.value = Number($("selGain").value);
+      const limiter = audioCtx.createDynamicsCompressor();
+      limiter.threshold.value = -6; limiter.knee.value = 0; limiter.ratio.value = 20;
+      limiter.attack.value = 0.003; limiter.release.value = 0.25;
+      procDest = audioCtx.createMediaStreamDestination();
+      const an = audioCtx.createAnalyser(); an.fftSize = 2048;
+      src.connect(gainNode); gainNode.connect(limiter); limiter.connect(procDest); limiter.connect(an);
+      const buf = new Float32Array(an.fftSize);
       cancelAnimationFrame(meterRaf);
       const draw = () => {
-        an.getByteTimeDomainData(buf);
-        let sum = 0; for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+        an.getFloatTimeDomainData(buf);
+        let sum = 0, pk = 0;
+        for (let i = 0; i < buf.length; i++) { const v = buf[i]; sum += v * v; if (Math.abs(v) > pk) pk = Math.abs(v); }
+        if (stat.on) { stat.sumSq += sum; stat.n += buf.length; if (pk > stat.peak) stat.peak = pk; }
         $("level").style.width = Math.min(100, Math.sqrt(sum / buf.length) * 400) + "%";
         meterRaf = requestAnimationFrame(draw);
       };
       draw();
     } catch (e) { log("音量條無法啟動：" + e.message); }
   }
+
+  $("selGain").addEventListener("change", () => {
+    if (gainNode) gainNode.gain.value = Number($("selGain").value);
+    log("軟體放大改為 ×" + $("selGain").value);
+  });
 
   // ---------- ② 螢幕常亮 ----------
   let wakeLock = null;
@@ -273,7 +300,7 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
   });
 
   // ---------- ③④ 錄音 ----------
-  let recorder = null, chunks = [], recStart = 0, tick = 0, autoStop = 0, lastUrl = "";
+  let recorder = null, chunks = [], recStart = 0, tick = 0, autoStop = 0, lastUrl = "", recGain = 1;
 
   async function startRec(seconds) {
     let s;
@@ -283,7 +310,11 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
     const opts = {};
     if ($("selMime").value) opts.mimeType = $("selMime").value;
     if ($("selBits").value) opts.audioBitsPerSecond = Number($("selBits").value);
-    try { recorder = new MediaRecorder(s, opts); }
+    // 有放大就錄放大後的聲音；×1 直接錄麥克風（和之前的測試一樣）
+    recGain = Number($("selGain").value);
+    const recStream = recGain > 1 && procDest ? procDest.stream : s;
+    stat.peak = 0; stat.sumSq = 0; stat.n = 0; stat.on = true;
+    try { recorder = new MediaRecorder(recStream, opts); }
     catch (e) { log("建立錄音器失敗：" + e.name + "：" + e.message); return; }
 
     chunks = [];
@@ -306,6 +337,7 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
 
   function onStop() {
     clearInterval(tick);
+    stat.on = false;
     const secs = (Date.now() - recStart) / 1000;
     const type = recorder.mimeType || (chunks[0] && chunks[0].type) || "";
     const blob = new Blob(chunks, { type: type });
@@ -316,7 +348,10 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
     const r = {
       長度: mmss(secs),
       格式: type || "未回報",
-      聲音處理: (streamProc === "on" ? "開" : "關") + "（實際：" + trackSettings() + "）",
+      聲音處理: procName(streamProc) + "（實際：" + trackSettings() + "）",
+      軟體放大: "×" + recGain,
+      最大音量: dbfs(stat.peak) + " dBFS",
+      平均音量: dbfs(Math.sqrt(stat.n ? stat.sumSq / stat.n : 0)) + " dBFS（說話正常約 -30～-15；低於 -40 算太小）",
       位元率設定: $("selBits").value ? $("selBits").value / 1000 + " kbps" : "預設",
       檔案大小: mb.toFixed(2) + " MB",
       實際位元率: kbps.toFixed(0) + " kbps",
@@ -325,7 +360,7 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
     };
     result.recs = result.recs || [];
     result.recs.push(r);
-    log("停止錄音：" + r.長度 + "，" + r.檔案大小 + "（" + r.實際位元率 + "）");
+    log("停止錄音：" + r.長度 + "，" + r.檔案大小 + "（" + r.實際位元率 + "），" + procName(streamProc) + "、×" + recGain + "，平均 " + r.平均音量.split("（")[0] + "、最大 " + r.最大音量);
 
     const t = $("rec"); t.textContent = "";
     for (const k in r) row(t, k, r[k]);
