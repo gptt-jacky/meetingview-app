@@ -65,12 +65,20 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
     <div class="btns">
       <button id="btnMic" class="primary">① 允許麥克風</button>
       <button id="btnWake">② 螢幕常亮</button>
+      <label class="wide">聲音處理（錄音悶、像電話 → 選「關」）
+        <select id="selProc">
+          <option value="off">關：原音（建議會議用）</option>
+          <option value="on">開：瀏覽器預設（降噪＋回音消除＋自動音量）</option>
+        </select>
+      </label>
       <label class="wide">錄音格式
         <select id="selMime"></select>
       </label>
       <label class="wide">位元率
         <select id="selBits">
           <option value="">瀏覽器預設</option>
+          <option value="128000">128 kbps</option>
+          <option value="96000">96 kbps</option>
           <option value="64000">64 kbps</option>
           <option value="32000">32 kbps</option>
         </select>
@@ -176,14 +184,24 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
   }
 
   // ---------- ① 麥克風 ----------
-  let stream = null, audioCtx = null, meterRaf = 0;
+  let stream = null, streamProc = "", audioCtx = null, meterRaf = 0;
+
+  // 瀏覽器預設會開降噪、回音消除、自動音量；iPhone 開了會變成「電話音質」（悶、像在水裡）
+  function audioConstraints(proc) {
+    if (proc === "on") return true;
+    return { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+  }
 
   async function getMic() {
-    if (stream && stream.getAudioTracks().some((t) => t.readyState === "live")) return stream;
+    const proc = $("selProc").value;
+    if (stream && streamProc === proc && stream.getAudioTracks().some((t) => t.readyState === "live")) return stream;
+    if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(proc) });
+      streamProc = proc;
       result.mic = "成功";
       log("麥克風：成功（" + (stream.getAudioTracks()[0].label || "未提供名稱") + "）");
+      log("聲音處理：" + (proc === "on" ? "開" : "關") + "；實際設定 " + trackSettings());
       stream.getAudioTracks().forEach((t) => {
         t.addEventListener("ended", () => log("⚠ 麥克風被中斷（track ended）"));
         t.addEventListener("mute", () => log("⚠ 麥克風靜音（track mute）"));
@@ -198,6 +216,16 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
       $("btnMic").textContent = "① 麥克風失敗";
       throw e;
     }
+  }
+
+  // 瀏覽器實際套用的設定（要求關，不一定真的關得掉）
+  function trackSettings() {
+    const t = stream && stream.getAudioTracks()[0];
+    if (!t || !t.getSettings) return "未回報";
+    const st = t.getSettings();
+    const onoff = (v) => v === undefined ? "?" : (v ? "開" : "關");
+    return "降噪 " + onoff(st.noiseSuppression) + "、回音消除 " + onoff(st.echoCancellation) +
+      "、自動音量 " + onoff(st.autoGainControl) + "、取樣率 " + (st.sampleRate || "?") + "、聲道 " + (st.channelCount || "?");
   }
 
   // 音量條：確認真的有收到聲音，不是錄到一片空白
@@ -288,6 +316,7 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
     const r = {
       長度: mmss(secs),
       格式: type || "未回報",
+      聲音處理: (streamProc === "on" ? "開" : "關") + "（實際：" + trackSettings() + "）",
       位元率設定: $("selBits").value ? $("selBits").value / 1000 + " kbps" : "預設",
       檔案大小: mb.toFixed(2) + " MB",
       實際位元率: kbps.toFixed(0) + " kbps",
