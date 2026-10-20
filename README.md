@@ -7,9 +7,9 @@ Meeting View 的手機錄音頁（靜態 HTML，透過 GitHub Pages 提供）。
 
 | 檔案 | 用途 |
 |---|---|
-| `record.html` | 正式錄音頁（record v2，10/20）：分段錄音、先存手機再上傳、上傳失敗自動再試／下載到手機。部署網址和 key 由使用者在手機上輸入，只存在那支手機 |
+| `record.html` | 正式錄音頁（record v4，10/20）：從今天的行事曆選會議、結束三層配套、連開會議一鍵切換、⚡臨時會議選與會人員；分段錄音、先存手機再上傳、上傳失敗自動再試／下載到手機。部署網址和 key 由使用者在手機上輸入，只存在那支手機 |
 | `mic-test.html` | 麥克風權限實測（只在手機本機錄音、播放，不上傳） |
 
 網址：
-- 錄音頁：`https://gptt-jacky.github.io/meetingview-app/record.html?v=2`（更新版本時改 `?v=`，避開 Pages 快取）
+- 錄音頁：`https://gptt-jacky.github.io/meetingview-app/record.html?v=4`（更新版本時改 `?v=`，避開 Pages 快取）
 - 麥克風測試：`https://gptt-jacky.github.io/meetingview-app/mic-test.html`

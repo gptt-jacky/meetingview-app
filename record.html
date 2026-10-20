@@ -1,6 +1,8 @@
 <!DOCTYPE html>
-<!-- Meeting View 手機錄音頁：分段錄音（×48 放大、64 kbps）、先存手機再上傳到 Apps Script、⚡臨時會議
+<!-- Meeting View 手機錄音頁：分段錄音（×48 放大、64 kbps）、先存手機再上傳到 Apps Script
      v2：嚴格判斷上傳成功、掉回應自動重送／定時再試、上傳提示、下載到手機備援
+     v3：從今天的行事曆選會議、結束三層配套（可復原／時間到提醒／超時自動結束）、連開會議一鍵切換
+     v4：⚡臨時會議先選與會人員（部門 → 組），建日曆時寄邀請
      放在公開的 GitHub Pages：不能寫死任何網址、key、email、會議內容
      最後更新: 2026/10/20 -->
 <html lang="zh-Hant-TW">
@@ -21,27 +23,32 @@ body {
   font-size: 16px; line-height: 1.5; padding: 16px;
 }
 .app { max-width: 560px; margin: 0 auto; display: grid; gap: 14px; }
+.app > * { min-width: 0; }
 header { display: flex; align-items: center; gap: 10px; }
 h1 { margin: 0; font-size: 18px; white-space: nowrap; }
 .ver { font-size: 12px; color: var(--muted); }
 .gear { margin-left: auto; font-size: 22px; padding: 6px 12px; }
 h2 { margin: 0 0 10px; font-size: 14px; color: var(--muted); letter-spacing: .08em; }
+.hrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.hrow button { padding: 6px 12px; font-size: 16px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
 .notes { font-size: 13px; color: var(--muted); display: grid; gap: 2px; padding: 10px 14px; }
 .banner { border-radius: 12px; padding: 10px 14px; font-weight: 600; }
 .banner.ng { background: #3a1c1a; color: var(--rec); }
 .banner.warn { background: #3a2b14; color: var(--warn); }
 .banner.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.banner.row > span { flex: 1 1 180px; min-width: 0; }
+.banner.row > span { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
 .banner .x { padding: 4px 10px; font-size: 16px; background: transparent; border: 0; color: inherit; }
 .banner .small { padding: 8px 12px; font-size: 14px; }
+.bbtns { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
+.bbtns button { flex: 1 1 auto; overflow-wrap: anywhere; }
 .toast {
   position: fixed; top: 12px; left: 16px; right: 16px; max-width: 528px; margin: 0 auto; z-index: 20;
   background: var(--ok); color: var(--bg); font-weight: 700; border-radius: 12px; padding: 12px 14px; text-align: center;
 }
 .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
 label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
-input[type=text], input[type=url], input[type=password] {
+input[type=text], input[type=url], input[type=password], input[type=search] {
   font: inherit; font-size: 17px; color: var(--fg); background: var(--bg);
   border: 1px solid var(--line); border-radius: 10px; padding: 12px; width: 100%;
 }
@@ -57,14 +64,36 @@ button.primary { background: var(--accent); color: var(--bg); border-color: var(
 button.stop { background: var(--rec); color: var(--bg); border-color: var(--rec); }
 button.small { padding: 10px 12px; font-size: 15px; }
 button:disabled { opacity: .45; cursor: default; }
+/* 今天的會議 */
+.evlist { display: grid; gap: 8px; }
+.evlist + .msg:empty { display: none; }
+button.ev {
+  display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: center; text-align: left;
+  padding: 14px; font-size: 17px; font-weight: 600; min-width: 0;
+}
+.ev .t { font-size: 14px; color: var(--muted); }
+.ev .ti { overflow-wrap: anywhere; min-width: 0; }
+.ev .tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--line); font-weight: 700; }
+.tag.now { background: var(--ok); color: var(--bg); }
+.tag.soon { background: var(--warn); color: var(--bg); }
+.tag.rec { background: transparent; border: 1px solid var(--muted); color: var(--muted); }
+button.ev.later, button.ev.ended { color: var(--muted); }
+button.ev.sel { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); color: var(--fg); }
+details summary { cursor: pointer; color: var(--muted); padding: 8px 0; font-size: 14px; }
+.next { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+.next .ti { font-weight: 700; overflow-wrap: anywhere; }
+/* 錄音 */
 .timer { font-size: 52px; font-weight: 600; text-align: center; line-height: 1.1; }
-.sub { text-align: center; color: var(--muted); }
+.sub { text-align: center; color: var(--muted); overflow-wrap: anywhere; }
 .meter { height: 14px; border-radius: 7px; background: var(--bg); overflow: hidden; margin-top: 12px; }
 .meter div { height: 100%; width: 0; background: var(--ok); }
 .db { text-align: center; font-size: 14px; color: var(--muted); margin-top: 4px; }
+/* 上傳 */
 .uploads { list-style: none; margin: 0; padding: 0; display: grid; }
 .uploads li { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
 .uploads li:first-child { border-top: 0; }
+.uploads li.grp { display: block; color: var(--muted); font-size: 13px; font-weight: 700; padding-top: 14px; overflow-wrap: anywhere; }
 .uploads .n { overflow-wrap: anywhere; min-width: 0; }
 .uploads .s { white-space: nowrap; }
 .uploads .acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
@@ -74,8 +103,19 @@ button:disabled { opacity: .45; cursor: default; }
 .summary.big { font-size: 20px; line-height: 1.4; }
 .ok { color: var(--ok); } .ng { color: var(--rec); } .warn { color: var(--warn); }
 pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; color: var(--muted); max-height: 220px; overflow: auto; }
+/* 彈出畫面 */
 .sheet { position: fixed; inset: 0; background: rgb(0 0 0 / .55); display: grid; place-items: center; padding: 16px; z-index: 10; }
 .sheet .card { width: min(480px, 100%); display: grid; gap: 12px; }
+.sheet .card > * { min-width: 0; }
+.sheet .card.tall { max-height: calc(100vh - 32px); overflow-y: auto; }
+.chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+.chips button { flex: 0 0 auto; padding: 10px 14px; font-size: 15px; border-radius: 999px; }
+.chips button.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.members { max-height: 42vh; overflow-y: auto; border-top: 1px solid var(--line); }
+.mem { display: flex; align-items: center; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--line); font-size: 16px; color: var(--fg); }
+.mem input { width: 22px; height: 22px; flex: 0 0 auto; }
+.mem .nm { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.mem small { flex: 0 1 auto; color: var(--muted); font-size: 13px; text-align: right; }
 .msg { font-size: 14px; min-height: 1.5em; }
 [hidden] { display: none !important; }
 </style>
@@ -91,6 +131,18 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     <button class="gear small" id="btnGear" aria-label="設定">⚙️</button>
   </header>
 
+  <div class="banner warn row" id="endBanner" hidden>
+    <span id="endText"></span>
+    <div class="bbtns">
+      <button class="small stop" id="btnEndB">結束會議</button>
+      <button class="small" id="btnExtend">延長 15 分鐘</button>
+      <button class="small primary" id="btnSwitchB" hidden></button>
+    </div>
+  </div>
+  <div class="banner ng row" id="autoEndBanner" hidden>
+    <span id="autoEndText"></span>
+    <button class="x" id="btnAutoEndX" aria-label="關閉">✕</button>
+  </div>
   <div class="banner ng" id="memBanner" hidden>❌ 手機暫存不能用，錄音會直接下載到手機</div>
   <div class="banner ng row" id="rejectBanner" hidden>
     <span id="rejectText"></span>
@@ -110,7 +162,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     <button class="x" id="btnPersistX" aria-label="關閉">✕</button>
   </div>
   <div class="banner warn" id="spaceBanner" hidden></div>
-  <div class="banner warn" id="fakeBanner" hidden>假上傳模式：不會真的上傳</div>
+  <div class="banner warn" id="fakeBanner" hidden>假上傳模式：不會真的上傳，會議是範例資料</div>
   <div class="banner ng" id="setupBanner" hidden>還沒設定上傳網址 → 按右上角 ⚙️</div>
   <div class="banner warn" id="webmBanner" hidden>這台手機只能錄 webm：Studio 能不能讀 webm 需要查證</div>
   <div class="banner warn" id="wakeBanner" hidden>這個瀏覽器不能保持螢幕常亮：請手動關閉自動鎖定</div>
@@ -120,23 +172,37 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     <span>錄音中不要切 App、不要鎖螢幕</span>
   </div>
 
+  <section class="card" id="graceCard" hidden>
+    <div class="banner warn" id="graceText"></div>
+    <div class="btns"><button class="primary small" id="btnGraceResume">↩ 繼續錄這場</button></div>
+  </section>
+
   <section class="card" id="startCard">
-    <h2>開始會議</h2>
-    <label>會議名稱（必填）
-      <input type="text" id="meetingName" maxlength="60" autocomplete="off" placeholder="例如：SUT 週會">
+    <div class="hrow"><h2>今天的會議</h2><button class="small" id="btnEvRefresh" aria-label="重新讀取行事曆">🔄</button></div>
+    <div class="evlist" id="evList"></div>
+    <div class="msg" id="evMsg"></div>
+    <details id="evEnded" hidden><summary id="evEndedSum"></summary><div class="evlist" id="evEndedList"></div></details>
+    <label style="margin-top:8px">會議名稱（可以改）
+      <input type="text" id="meetingName" maxlength="60" autocomplete="off" placeholder="先選上面的會議">
     </label>
+    <div class="msg ng" id="manualNote" hidden>讀不到行事曆、也建不了日曆活動：可以直接輸入名稱開始（這場沒有對應日曆活動）</div>
     <div class="btns two">
-      <button class="primary" id="btnStart">開始錄音</button>
+      <button class="primary" id="btnStart" disabled>開始錄音</button>
       <button id="btnQuick">⚡ 臨時會議</button>
     </div>
     <div class="msg ng" id="startMsg"></div>
   </section>
 
   <section class="card" id="recCard" hidden>
+    <div class="banner warn row" id="undoBar" hidden style="margin-bottom:10px">
+      <span id="undoText"></span>
+      <button class="small" id="btnUndo">↩ 復原切換</button>
+    </div>
     <h2 id="recTitle">錄音中</h2>
     <div class="timer mono" id="elapsed">00:00:00</div>
     <div class="sub" id="segInfo">第 1 段</div>
     <div class="sub" id="eventMsg" hidden></div>
+    <div class="sub warn" id="eventWarn" hidden></div>
     <div class="meter" aria-label="音量"><div id="level"></div></div>
     <div class="db mono" id="dbText">平均 -∞ dBFS</div>
     <div class="banner warn" id="lowBanner" hidden style="margin-top:10px">太小聲，手機靠近一點</div>
@@ -145,6 +211,15 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
       <div class="btns"><button class="primary small" id="btnResume">繼續錄音（接下一段）</button></div>
     </div>
     <div class="btns"><button class="stop" id="btnEnd">結束會議</button></div>
+    <div class="next" id="nextBox" hidden>
+      <div class="sub" style="text-align:left">下一場</div>
+      <div class="ti" id="nextText"></div>
+      <button class="primary small" id="btnSwitchNext">切換到這場</button>
+    </div>
+    <div class="btns two">
+      <button class="small" id="btnOther">選其他會議</button>
+      <button class="small" id="btnQuick2">⚡ 臨時會議</button>
+    </div>
   </section>
 
   <section class="card" id="upCard" hidden>
@@ -182,20 +257,60 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   </div>
 </div>
 
+<div class="sheet" id="evSheet" hidden>
+  <div class="card tall">
+    <div class="hrow"><h2>切換到其他會議</h2><button class="small" id="btnEvRefresh2" aria-label="重新讀取行事曆">🔄</button></div>
+    <div class="msg" id="evSheetMsg"></div>
+    <div class="evlist" id="evSheetList"></div>
+    <button class="small" id="btnEvSheetClose">取消</button>
+  </div>
+</div>
+
+<div class="sheet" id="quickSheet" hidden>
+  <div class="card tall">
+    <h2>⚡ 臨時會議</h2>
+    <label>會議名稱（必填）
+      <input type="text" id="qName" maxlength="60" autocomplete="off" placeholder="例如：SUT 討論">
+    </label>
+    <div class="hrow"><span>與會人員</span><span class="warn" id="qCount">已選 0 人</span></div>
+    <input type="search" id="qSearch" placeholder="搜尋姓名、部門、組" autocomplete="off">
+    <div class="chips" id="qDepts"></div>
+    <div class="chips" id="qUnits" hidden></div>
+    <div class="msg" id="qMsg"></div>
+    <div class="members" id="qList"></div>
+    <div class="btns">
+      <button class="primary" id="qStart">開始（已選 0 人）</button>
+      <button class="small" id="qNoPick">不選人直接開始</button>
+      <button class="small" id="qCancel">取消</button>
+    </div>
+    <div class="msg ng" id="qErr"></div>
+  </div>
+</div>
+
 <script>
 (function () {
   "use strict";
-  const VERSION = "record v2（10/20）";
+  const VERSION = "record v4（10/20）";
   const $ = (id) => document.getElementById(id);
   const pad = (n) => String(n).padStart(2, "0");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const mb = (n) => (n / 1048576).toFixed(2) + " MB";
+  const HM = (t) => { const d = new Date(t); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+  const MIN = 60000;
+  const dur = (ms) => (ms % MIN ? Math.round(ms / 1000) + " 秒" : ms / MIN + " 分鐘");
   const params = new URLSearchParams(location.search);
   const num = (k) => (Number(params.get(k)) > 0 ? Number(params.get(k)) : 0);
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
 
   // ---------- 設定（localStorage 可能被擋，一律 try/catch）----------
   function lsGet(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+  function lsJson(k, def) { try { return JSON.parse(lsGet(k)) || def; } catch (e) { return def; } }
   const cfg = {
     url: () => lsGet("mv_api_url").trim(),
     key: () => lsGet("mv_upload_key").trim(),
@@ -205,8 +320,15 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   const SEG_MS = (num("seg") || 600) * 1000;          // ?seg=秒數：測試用，縮短每段長度
   const TIMEOUT_S = num("timeout");                   // ?timeout=秒數：測試用，縮短逾時
   const AUTORETRY_MS = (num("autoretry") || 120) * 1000; // ?autoretry=秒數：測試用，縮短自動再試間隔
+  const GRACE_MS = (num("grace") || 120) * 1000;      // 結束後可以復原的時間（?grace=秒數）
+  const AUTOEND_MS = (num("autoend") || 3600) * 1000; // 超過預定結束、沒碰畫面多久自動結束（?autoend=秒數）
+  const REMIND_MS = (num("remind") || 900) * 1000;    // 時間到之後每隔多久再提醒（?remind=秒數）
+  const EXTEND_MS = 15 * MIN;
+  const UNDO_MS = 5000;                               // 切換會議後可以復原的時間
+  const QUICK_MS = 60 * MIN;                          // 臨時會議（和沒有日曆的會議）預定長度
+  const EVENTS_REFRESH_MS = 5 * MIN;
   const RETRY_WAIT = [2, 5, 10];   // 上傳：失敗後等幾秒再試（共 3 次）
-  const EVENT_RETRY_WAIT = [2, 5]; // 臨時會議建日曆：同一個 requestId 再試 2 次
+  const EVENT_RETRY_WAIT = [2, 5]; // 建日曆、讀行事曆、讀名單：再試 2 次
   const LOW_SPACE_MB = 200;        // 1 小時約 30 MB（推算）
   const GAIN = 48;
   const BITRATE = 64000;
@@ -229,7 +351,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
 
   // ---------- 手機暫存（IndexedDB；不能用時退回記憶體＋每段直接下載）----------
   // 一筆＝一個要上傳的東西：kind "segment"（音檔）或 "complete"（完成.json）
-  // status：pending 等待上傳／failed 重試後仍失敗／recording 會議進行中（只有 complete）
+  // status：pending 等待上傳／failed 重試後仍失敗／recording 會議還沒結束（只有 complete）
   // lastError：上次失敗原因（成功才會整筆刪掉）；rejected：後端明確拒絕（key 不正確等）
   const mem = new Map();
   let dbp = null, useMem = false;
@@ -271,16 +393,51 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   };
 
   // ---------- API ----------
-  // 假上傳（測試用）：模擬 Apps Script 的各種回應
-  //   1 成功｜fail2 每個請求前 2 次連線失敗｜fail 一直連線失敗｜doget 回 doGet 的結果
-  //   empty 空白回應｜reject 後端拒絕（key 不正確）｜slow 一直不回（等逾時）
+  // 假上傳（測試用）：模擬 Apps Script 的各種回應。?fake= 用逗號串多個模式，例如 fake=1,events-fail,event-fail2
+  //   上傳／完成檔／測試連線：1 成功｜fail2 前 2 次連線失敗｜fail 一直連線失敗｜doget 回 doGet 的結果
+  //                          empty 空白回應｜reject 後端拒絕（key 不正確）｜slow 一直不回（等逾時）
+  //   其他 API 預設成功，另外指定：events-…（讀行事曆）、members-…（讀名單）、event-…（建日曆）
+  //   events-empty 今天沒有會議｜event-unknown 回 unknownIds｜假會議的時間以開頁為準，?fakeend=秒數 讓進行中那場提早結束
+  const FAKE_BASE = ["1", "fail2", "fail", "doget", "empty", "reject", "slow"];
+  const FAKE_KIND = { todayEvents: "events", members: "members", createEvent: "event" };
+  function fakeMode(action) {
+    const m = { base: "1" };
+    cfg.fake().split(",").forEach((t) => {
+      const i = t.indexOf("-");
+      if (FAKE_BASE.includes(t)) m.base = t; else if (i > 0) m[t.slice(0, i)] = t.slice(i + 1);
+    });
+    return FAKE_KIND[action] ? (m[FAKE_KIND[action]] || "1") : m.base;
+  }
+  const FAKE_T0 = Date.now(), FAKE_END = num("fakeend");
+  function fakeEvents() {
+    const iso = (t) => new Date(t).toISOString();
+    const curEnd = FAKE_END ? FAKE_T0 + FAKE_END * 1000 : FAKE_T0 + 40 * MIN;
+    const nextStart = FAKE_END ? curEnd + 5 * MIN : FAKE_T0 + 20 * MIN;
+    return [
+      { id: "fake-ev-ended", title: "範例：晨會", start: iso(FAKE_T0 - 120 * MIN), end: iso(FAKE_T0 - 60 * MIN) },
+      { id: "fake-ev-now", title: "範例：SUT 週會", start: iso(FAKE_T0 - 20 * MIN), end: iso(curEnd) },
+      { id: "fake-ev-next", title: "範例：硬體設計審查", start: iso(nextStart), end: iso(nextStart + 60 * MIN) },
+      { id: "fake-ev-later", title: "範例：二〇二六年第四季硬體部跨部門專案進度檢討與下一階段規劃討論（含供應商與外部顧問）",
+        start: iso(FAKE_T0 + 180 * MIN), end: iso(FAKE_T0 + 240 * MIN) }
+    ];
+  }
+  const FAKE_MEMBERS = [
+    ["範例A", "研發部", "硬體研發組"], ["範例P", "研發部", "硬體研發組"], ["範例B", "研發部", "美術研發組"],
+    ["範例C", "研發部", ""], ["範例D", "總經理室", ""], ["範例E", "財務部", "財會組"],
+    ["範例F", "研發部", "軟體研發組"], ["範例G", "研發部", "專案管理組"], ["範例H", "研發部", "設計組"],
+    ["範例I", "研發部", "資訊組"], ["範例J", "研發部", "維運組"], ["範例K", "行政管理部", "人資組"],
+    ["範例L", "產品事業發展部", ""], ["範例M", "專案業務部", ""], ["範例N", "稽核室", ""]
+  ].map((a, i) => ({ id: "fake" + pad(i + 1) + "00", name: a[0], dept: a[1], unit: a[2] }));
+
   const fakeTries = {};
   window.__mvFakeLog = [];
-  function fakeFetch(mode, body, signal) {
+  function fakeFetch(body, signal) {
+    const mode = fakeMode(body.action);
     const id = body.name || body.requestId || body.action;
     const tries = fakeTries[id] = (fakeTries[id] || 0) + 1;
-    const willOk = mode === "1" || (mode === "fail2" && tries > 2);
-    window.__mvFakeLog.push(Object.assign({}, body, { data: body.data ? "(" + body.data.length + " 字元)" : undefined, mode: mode, ok: willOk }));
+    const willOk = !["fail", "doget", "reject", "slow"].includes(mode) && !(mode === "fail2" && tries <= 2) &&
+      !(mode === "empty" && body.action !== "todayEvents");
+    window.__mvFakeLog.push(Object.assign({}, body, { data: body.data ? "(" + body.data.length + " 字元)" : undefined, mode: mode, ok: willOk, t: Date.now() }));
     return new Promise((res, rej) => {
       const reply = (status, obj) => res({ status: status, text: async () => (obj === undefined ? "" : JSON.stringify(obj)) });
       signal.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError")));
@@ -288,10 +445,17 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
       setTimeout(() => {
         if (mode === "fail" || (mode === "fail2" && tries <= 2)) return rej(new TypeError("假上傳：模擬連線失敗"));
         if (mode === "doget") return reply(200, { ok: true, service: "Meeting View", time: new Date().toISOString() });
-        if (mode === "empty") return reply(200);
+        if (mode === "empty" && body.action !== "todayEvents") return reply(200);
         if (mode === "reject") return reply(200, { ok: false, error: "key 不正確", action: body.action });
         const r = { ok: true, action: body.action };
-        if (body.action === "createEvent") { r.eventId = "fake-event"; r.start = new Date().toISOString(); }
+        if (body.action === "createEvent") {
+          const ids = body.memberIds || [];
+          const unknown = mode === "unknown" ? ids.slice(0, 1) : ids.filter((x) => !FAKE_MEMBERS.some((f) => f.id === x));
+          r.eventId = "fake-event-" + String(body.requestId).slice(-6); r.start = new Date().toISOString();
+          r.guests = ids.length - unknown.length;
+          if (unknown.length) r.unknownIds = unknown;
+        } else if (body.action === "todayEvents") { r.events = mode === "empty" ? [] : fakeEvents(); r.now = new Date().toISOString(); }
+        else if (body.action === "members") r.members = FAKE_MEMBERS;
         else if (body.action !== "ping") r.fileId = "fake";
         reply(200, r);
       }, 1000);
@@ -307,7 +471,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_S ? TIMEOUT_S * 1000 : (body.action === "upload" ? 120000 : 60000));
     try {
       // 只用 text/plain，不加其他標頭，避免 CORS 預檢
-      const res = fake ? await fakeFetch(fake, body, ctrl.signal) : await fetch(url, {
+      const res = fake ? await fakeFetch(body, ctrl.signal) : await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
         body: JSON.stringify(Object.assign({ key: cfg.key() }, body)),
@@ -321,14 +485,16 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
 
   // 成功判斷（10/20 實測 Apps Script 約 1/10 掉回應，甚至拿到 doGet 的 ok:true）
   // 回傳 { ok, r }｜{ reject: 原因 }（後端明確拒絕，不重試）｜{ retry: 原因 }
-  const NEED = { upload: "fileId", complete: "fileId", createEvent: "eventId" };
+  const NEED = { upload: "fileId", complete: "fileId", createEvent: "eventId", todayEvents: "events", members: "members" };
+  const NEED_LIST = { todayEvents: true, members: true };
   function judge(action, r) {
     if (!r || typeof r !== "object") return { retry: "回應不正確" };
     if (r.action !== undefined && r.action !== action) return { retry: "回應的 action 不符（" + r.action + "）" };
     if (r.ok === false && r.error) return { reject: String(r.error) };
     if (r.ok !== true) return { retry: "回應不正確" };
     if (r.service !== undefined) return { retry: "收到的是 doGet 的回應" };
-    if (NEED[action] && !r[NEED[action]]) return { retry: "回應缺少 " + NEED[action] };
+    const f = NEED[action];
+    if (f && (NEED_LIST[action] ? !Array.isArray(r[f]) : !r[f])) return { retry: "回應缺少 " + f };
     return { ok: true, r: r };
   }
 
@@ -366,8 +532,9 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     if (list.some((r) => r.kind === "complete")) parts.push("完成檔");
     return parts.join("和");
   }
+  const prefixOfName = (name) => name.replace(/_(\d+\.\w+|完成\.json)$/, "");
 
-  // ---------- 上傳佇列：一次一個，依序上傳；段落都傳完才送 complete ----------
+  // ---------- 上傳佇列：一次一個，依序上傳；同一場的段落都傳完才送那場的 complete ----------
   const rows = new Map(); // name → 顯示狀態
   let pumping = false, pumpAgain = false, sendingName = "", leftCount = 0;
 
@@ -418,7 +585,8 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
       setRow(rec.name, "✅");
       log("✅ " + rec.name + (v.r.duplicate ? "（已存在，視為成功）" : ""));
       if (rec.kind === "segment") toast("✅ " + labels([rec]) + "已上傳");
-      if (rec.kind === "complete" && meeting && rec.prefix === meeting.prefix) meeting.completeSent = true;
+      const m = meetings.get(rec.prefix);
+      if (rec.kind === "complete" && m) m.completeSent = true;
       return;
     }
     rec.status = "failed";
@@ -484,8 +652,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   }
 
   function smallBtn(text, cls, fn) {
-    const b = document.createElement("button");
-    b.textContent = text; if (cls) b.className = cls;
+    const b = el("button", cls, text);
     b.addEventListener("click", fn);
     return b;
   }
@@ -498,22 +665,31 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     recs.forEach((r) => {
       if (!rows.has(r.name)) rows.set(r.name, r.status === "failed" ? "❌" : (r.status === "recording" ? "會議中" : "等待"));
     });
-    const ul = $("uploads"); ul.textContent = "";
+    // 依會議分組（連開會議時上一場還在背景上傳）
+    const groups = new Map();
     rows.forEach((st, name) => {
-      const li = document.createElement("li");
-      const n = document.createElement("span"); n.className = "n mono"; n.textContent = name;
-      const s = document.createElement("span"); s.className = "s " + (st === "✅" ? "ok" : st === "❌" ? "ng" : "warn"); s.textContent = st;
-      li.append(n, s);
-      const rec = byName.get(name);
-      if (rec && rec.status !== "recording" && name !== sendingName) {
-        const acts = document.createElement("div"); acts.className = "acts";
-        acts.append(smallBtn("下載", "", () => { download(rec); renderUploads(); }));
-        if (downloaded.has(name)) {
-          acts.append(smallBtn(delArmed === name ? "再按一次確認刪除" : "我已手動上傳，刪除這筆", "warn", () => manualDelete(name)));
+      const p = prefixOfName(name);
+      if (!groups.has(p)) groups.set(p, []);
+      groups.get(p).push([name, st]);
+    });
+    const ul = $("uploads"); ul.textContent = "";
+    groups.forEach((list, p) => {
+      const m = meetings.get(p);
+      ul.append(el("li", "grp", (m ? HM(m.t0) + "　" + m.name : p) + (m && m === meeting ? "（錄音中）" : "")));
+      list.forEach(([name, st]) => {
+        const li = el("li");
+        li.append(el("span", "n mono", name), el("span", "s " + (st === "✅" ? "ok" : st === "❌" ? "ng" : "warn"), st));
+        const rec = byName.get(name);
+        if (rec && rec.status !== "recording" && name !== sendingName) {
+          const acts = el("div", "acts");
+          acts.append(smallBtn("下載", "", () => { download(rec); renderUploads(); }));
+          if (downloaded.has(name)) {
+            acts.append(smallBtn(delArmed === name ? "再按一次確認刪除" : "我已手動上傳，刪除這筆", "warn", () => manualDelete(name)));
+          }
+          li.append(acts);
         }
-        li.append(acts);
-      }
-      ul.append(li);
+        ul.append(li);
+      });
     });
     $("upCard").hidden = rows.size === 0;
 
@@ -530,12 +706,12 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     const rejKey = rej ? rej.lastError : "";
     $("rejectText").textContent = "❌ 上傳被拒絕：" + rejKey;
     $("rejectBanner").hidden = !rejKey || rejKey === rejectDismissed;
-    // 上次沒傳完的（不是這場會議的）
-    const old = left.filter((r) => !meeting || r.prefix !== meeting.prefix).length;
+    // 上次沒傳完的（不是這次開頁錄的）
+    const old = left.filter((r) => !meetings.has(r.prefix)).length;
     $("leftText").textContent = "手機上有 " + old + " 個檔案還沒上傳";
     $("leftBanner").hidden = !old;
 
-    const ended = !meeting || meeting.ended;
+    const ended = !meeting;
     let text = "", cls = "", big = false;
     if (pumping && left.length) { text = "上傳中…（還有 " + left.length + " 個）"; cls = "warn"; }
     else if (left.some((r) => r.status === "failed")) {
@@ -543,8 +719,10 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
       cls = "ng"; big = ended;
     }
     else if (left.length) { text = "有 " + left.length + " 個檔案等待上傳"; cls = "warn"; }
-    else if (meeting && meeting.ended && meeting.completeSent) {
-      text = "✅ 全部上傳完成（" + meeting.segments + " 段＋完成檔）"; cls = "ok"; big = true;
+    else if (ended && !graceM) {
+      const done = Array.from(meetings.values()).filter((m) => m.completeSent);
+      if (done.length === 1) { text = "✅ 全部上傳完成（" + done[0].segments + " 段＋完成檔）"; cls = "ok"; big = true; }
+      else if (done.length > 1) { text = "✅ 全部上傳完成（" + done.length + " 場會議）"; cls = "ok"; big = true; }
     }
     $("upSummary").textContent = text;
     $("upSummary").className = "summary " + cls + (big ? " big" : "");
@@ -561,12 +739,260 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   });
   $("btnRejectX").addEventListener("click", () => { rejectDismissed = $("rejectText").textContent.replace("❌ 上傳被拒絕：", ""); $("rejectBanner").hidden = true; });
   $("btnPersistX").addEventListener("click", () => { $("persistBanner").hidden = true; });
+  $("btnAutoEndX").addEventListener("click", () => { $("autoEndBanner").hidden = true; });
+
+  // ---------- 今天的行事曆 ----------
+  // 每筆 { id, title, start, end }（毫秒）；後端只回今天、不含全天活動、不含參加者
+  let events = null, evState = "", evErr = "", evLoading = false, evFailed = false, quickFailed = false;
+  let selId = "", selAuto = true, lastEvRender = 0;
+  const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
+
+  async function loadEvents(why) {
+    if (evLoading) return;
+    if (!cfg.fake() && !cfg.url()) { evState = "nocfg"; renderEvents(); return; }
+    evLoading = true;
+    if (!events) { evState = "loading"; renderEvents(); }
+    const v = await request({ action: "todayEvents" }, EVENT_RETRY_WAIT, null, "讀取行事曆");
+    evLoading = false;
+    if (v.ok) {
+      events = v.r.events.map((e) => ({ id: String(e.id), title: String(e.title || "（沒有標題）"), start: Date.parse(e.start), end: Date.parse(e.end) }))
+        .filter((e) => e.id && isFinite(e.start) && isFinite(e.end));
+      evState = "ok"; evFailed = false;
+      log("📅 今天的會議 " + events.length + " 場（" + why + "）");
+    } else {
+      evFailed = true; evErr = v.reject || v.fail;
+      evState = events ? "stale" : "fail";
+      log("⚠ 讀不到行事曆（" + why + "）：" + evErr);
+    }
+    renderEvents();
+  }
+
+  function evClass(e, now) {
+    if (e.end <= now) return "ended";
+    if (e.start <= now) return "now";
+    if (e.start <= now + 30 * MIN) return "soon";
+    return "later";
+  }
+  const EV_ORDER = { now: 0, soon: 1, later: 2, ended: 3 };
+  const EV_TAG = { now: "進行中", soon: "即將開始", later: "", ended: "已結束" };
+  function sortedEvents(now) {
+    return (events || []).map((e) => ({ e: e, c: evClass(e, now) }))
+      .sort((a, b) => EV_ORDER[a.c] - EV_ORDER[b.c] || a.e.start - b.e.start);
+  }
+  // 這支手機今天錄過的日曆活動
+  function recordedIds() { const r = lsJson("mv_recorded", {}); return r.date === today() && Array.isArray(r.ids) ? r.ids : []; }
+  function markRecorded(id) {
+    const ids = recordedIds();
+    if (!ids.includes(id)) ids.push(id);
+    lsSet("mv_recorded", JSON.stringify({ date: today(), ids: ids }));
+  }
+  function evButton(e, c, sel, onPick) {
+    const b = el("button", "ev " + c + (sel ? " sel" : ""));
+    b.type = "button"; b.dataset.id = e.id; b.setAttribute("aria-pressed", sel ? "true" : "false");
+    b.append(el("span", "t mono", HM(e.start) + "–" + HM(e.end)), el("span", "ti", e.title));
+    const tags = el("span", "tags");
+    if (EV_TAG[c]) tags.append(el("span", "tag " + c, EV_TAG[c]));
+    if (recordedIds().includes(e.id)) tags.append(el("span", "tag rec", "已錄過"));
+    if (tags.childNodes.length) b.append(tags);
+    b.addEventListener("click", () => onPick(e));
+    return b;
+  }
+
+  function renderEvents() {
+    lastEvRender = Date.now();
+    const now = Date.now();
+    const list = sortedEvents(now);
+    // 預設選取：進行中，沒有就即將開始；使用者自己選過就不動
+    if (selAuto || !list.some((x) => x.e.id === selId)) {
+      const d = list.find((x) => x.c === "now") || list.find((x) => x.c === "soon");
+      const id = d ? d.e.id : "";
+      if (id !== selId || !selAuto) { selId = id; selAuto = true; $("meetingName").value = d ? d.e.title : ""; }
+    }
+    const main = $("evList"), endedBox = $("evEndedList");
+    main.textContent = ""; endedBox.textContent = "";
+    const pick = (e) => { selId = e.id; selAuto = false; $("meetingName").value = e.title; $("startMsg").textContent = ""; renderEvents(); };
+    let nEnded = 0;
+    list.forEach((x) => {
+      const b = evButton(x.e, x.c, x.e.id === selId, pick);
+      if (x.c === "ended") { endedBox.append(b); nEnded++; } else main.append(b);
+    });
+    $("evEnded").hidden = !nEnded;
+    $("evEndedSum").textContent = "已結束（" + nEnded + "）";
+    const msg = {
+      loading: "讀取今天的會議…",
+      nocfg: "還沒設定上傳網址，讀不到行事曆：按右上角 ⚙️，或用 ⚡ 臨時會議",
+      fail: "讀不到行事曆（" + evErr + "）：按 🔄 再試，或用 ⚡ 臨時會議",
+      stale: "⚠ 更新行事曆失敗，顯示的是上次讀到的",
+      ok: list.length ? (list.every((x) => x.c === "ended") ? "今天的會議都結束了：補錄請展開「已結束」，或用 ⚡ 臨時會議" : "") : "今天行事曆沒有會議：用 ⚡ 臨時會議"
+    }[evState] || "";
+    $("evMsg").textContent = msg;
+    $("evMsg").className = "msg " + (evState === "fail" || evState === "nocfg" ? "ng" : "warn");
+    updateStartBtn();
+    renderNext();
+    if (!$("evSheet").hidden) renderEvSheet();
+  }
+
+  // 只有讀不到行事曆、而且 ⚡ 建活動也失敗時，才能不選會議直接輸入名稱開始（錄音比日曆重要）
+  const manualAllowed = () => (evFailed || evState === "nocfg") && quickFailed;
+  function updateStartBtn() {
+    const manual = !selId && manualAllowed();
+    $("manualNote").hidden = !manual;
+    $("btnStart").disabled = recBusy || !(selId || (manual && $("meetingName").value.trim()));
+  }
+
+  // 下一場：還沒結束、不是目前這場、在目前這場之後開始
+  function nextEvent(m, now) {
+    if (!events || !m) return null;
+    const after = m.evStart || m.t0;
+    return events.filter((e) => e.end > now && e.id !== m.eventId && e.start > after)
+      .sort((a, b) => a.start - b.start)[0] || null;
+  }
+  function renderNext() {
+    const nx = nextEvent(meeting, Date.now());
+    $("nextBox").hidden = !nx;
+    if (nx) $("nextText").textContent = HM(nx.start) + "　" + nx.title;
+  }
+
+  function renderEvSheet() {
+    const box = $("evSheetList"); box.textContent = "";
+    const now = Date.now();
+    const list = sortedEvents(now).filter((x) => !meeting || x.e.id !== meeting.eventId);
+    list.forEach((x) => box.append(evButton(x.e, x.c, false, (e) => { $("evSheet").hidden = true; switchTo({ ev: e }); })));
+    $("evSheetMsg").textContent = evLoading && !events ? "讀取今天的會議…" : !events ? "讀不到行事曆：按 🔄 再試，或用 ⚡ 臨時會議" :
+      list.length ? "" : "今天沒有其他會議";
+  }
+
+  // ---------- 成員名單（⚡臨時會議選人）----------
+  // 手機只存 id、姓名、部門、組（不存 email）；勾選的 id 交給後端對回 email
+  const DIRECT = "部門直屬";
+  let members = null, memState = "", memErr = "", memLoading = false;
+  const cachedMembers = lsJson("mv_members", null);
+  if (Array.isArray(cachedMembers) && cachedMembers.length) { members = cachedMembers; memState = "cache"; }
+  const lastPick = lsJson("mv_member_pick", []);
+  const picked = new Set(Array.isArray(lastPick) ? lastPick : []);
+  let qDept = lsGet("mv_member_dept");
+  const qUnits = lsJson("mv_member_units", {});
+
+  async function loadMembers(why) {
+    if (memLoading) return;
+    if (!cfg.fake() && !cfg.url()) { if (!members) memState = "nocfg"; renderQuick(); return; }
+    memLoading = true;
+    if (!members) { memState = "loading"; renderQuick(); }
+    const v = await request({ action: "members" }, EVENT_RETRY_WAIT, null, "讀取成員名單");
+    memLoading = false;
+    if (v.ok) {
+      members = v.r.members.filter((m) => m && m.id && m.name)
+        .map((m) => ({ id: String(m.id), name: String(m.name), dept: String(m.dept || ""), unit: String(m.unit || "") }));
+      memState = "ok";
+      lsSet("mv_members", JSON.stringify(members));
+      log("成員名單 " + members.length + " 人（" + why + "）");
+    } else {
+      memErr = v.reject || v.fail;
+      memState = members ? "stale" : "fail";
+      log("⚠ 讀不到成員名單（" + why + "）：" + memErr);
+    }
+    renderQuick();
+  }
+
+  function deptsOf(list) {
+    const out = [];
+    list.forEach((m) => { if (m.dept && !out.includes(m.dept)) out.push(m.dept); });
+    return out;
+  }
+  // 第二層：照名單出現順序；部門裡沒有組的人放最後「部門直屬」；整個部門都沒有組就沒有第二層
+  function unitsOf(dept) {
+    const ms = (members || []).filter((m) => m.dept === dept);
+    const out = [];
+    ms.forEach((m) => { if (m.unit && !out.includes(m.unit)) out.push(m.unit); });
+    if (out.length && ms.some((m) => !m.unit)) out.push(DIRECT);
+    return out;
+  }
+  function chipRow(box, items, on, label, onPick) {
+    box.textContent = "";
+    items.forEach((it) => {
+      const b = el("button", it === on ? "on" : "", label(it));
+      b.type = "button"; b.setAttribute("aria-pressed", it === on ? "true" : "false");
+      b.addEventListener("click", () => onPick(it));
+      box.append(b);
+    });
+  }
+  function pickedIds() {
+    const ids = new Set((members || []).map((m) => m.id));
+    return Array.from(picked).filter((id) => ids.has(id));
+  }
+  function renderCount() {
+    const n = pickedIds().length;
+    $("qCount").textContent = "已選 " + n + " 人";
+    $("qStart").textContent = "開始（已選 " + n + " 人）";
+  }
+  function renderQuick() {
+    if ($("quickSheet").hidden) return;
+    const list = members || [];
+    const depts = deptsOf(list);
+    if (qDept && !depts.includes(qDept)) qDept = "";
+    chipRow($("qDepts"), [""].concat(depts), qDept, (d) => d || "全部", (d) => { qDept = d; lsSet("mv_member_dept", d); renderQuick(); });
+    const units = qDept ? unitsOf(qDept) : [];
+    const unit = units.includes(qUnits[qDept]) ? qUnits[qDept] : (units[0] || "");
+    $("qUnits").hidden = !units.length;
+    chipRow($("qUnits"), units, unit, (u) => u, (u) => { qUnits[qDept] = u; lsSet("mv_member_units", JSON.stringify(qUnits)); renderQuick(); });
+    $("qDepts").hidden = !depts.length;
+
+    // 搜尋：跨部門找（姓名、部門、組），有文字時忽略篩選
+    const q = $("qSearch").value.trim().toLowerCase();
+    const shown = list.filter((m) => q ? (m.name + " " + m.dept + " " + m.unit).toLowerCase().includes(q)
+      : !qDept || (m.dept === qDept && (!units.length || (unit === DIRECT ? !m.unit : m.unit === unit))));
+    const box = $("qList"); box.textContent = "";
+    shown.forEach((m) => {
+      const row = el("label", "mem");
+      const cb = el("input"); cb.type = "checkbox"; cb.checked = picked.has(m.id); cb.dataset.id = m.id;
+      cb.addEventListener("change", () => { if (cb.checked) picked.add(m.id); else picked.delete(m.id); renderCount(); });
+      row.append(cb, el("span", "nm", m.name), el("small", "", m.unit || m.dept));
+      box.append(row);
+    });
+    box.hidden = !shown.length;
+    let msg = "", cls = "warn";
+    if (!list.length) {
+      msg = memState === "loading" ? "讀取成員名單中…" : "讀不到成員名單" + (memErr ? "（" + memErr + "）" : "") + "：可以不選人直接開始";
+      cls = memState === "loading" ? "" : "ng";
+    } else if (memState === "stale") msg = "⚠ 更新名單失敗，用手機上次的名單";
+    else if (!shown.length) msg = q ? "找不到「" + q + "」" : "這裡沒有人";
+    $("qMsg").textContent = msg; $("qMsg").className = "msg " + cls;
+    $("qStart").hidden = !list.length;
+    renderCount();
+  }
+
+  function openQuick() {
+    $("qName").value = ""; $("qSearch").value = ""; $("qErr").textContent = "";
+    $("quickSheet").hidden = false;
+    renderQuick();
+    loadMembers("選人");
+    $("qName").focus();
+  }
+  function quickGo(withPeople) {
+    const raw = $("qName").value.trim();
+    if (!cleanName(raw)) { $("qErr").textContent = "請先輸入會議名稱"; $("qName").focus(); return; }
+    const ids = withPeople ? pickedIds() : [];
+    if (withPeople) lsSet("mv_member_pick", JSON.stringify(ids));
+    $("quickSheet").hidden = true;
+    const t = { name: raw, quick: { memberIds: ids } };
+    if (meeting) switchTo(t); else startMeeting(t);
+  }
+  $("btnQuick").addEventListener("click", openQuick);
+  $("btnQuick2").addEventListener("click", openQuick);
+  $("qStart").addEventListener("click", () => quickGo(true));
+  $("qNoPick").addEventListener("click", () => quickGo(false));
+  $("qCancel").addEventListener("click", () => { $("quickSheet").hidden = true; });
+  $("qSearch").addEventListener("input", renderQuick);
 
   // ---------- 錄音 ----------
-  let meeting = null;      // { name, prefix, start, eventId, eventP, segments, ended, completeSent }
+  // 一場會議 m：{ name, prefix, start, t0, eventId, eventP, evStart, endAt, quick, segments, segNo, saves,
+  //              status: recording｜grace（結束後可復原）｜switching（切換後可復原）｜done, end, endReason, completeSent }
+  const meetings = new Map(); // prefix → 這次開頁錄的會議
+  let meeting = null;         // 正在錄的那場
   let audioCtx = null, micStream = null, dest = null, analyser = null;
-  let recorder = null, segNo = 0, segTimer = 0, mimeType = "", ext = "m4a";
-  let wakeLock = null, hiddenAt = 0, elapsedTimer = 0;
+  let cur = null, segTimer = 0, mimeType = "", ext = "m4a";
+  let wakeLock = null, hiddenAt = 0, recBusy = false, lastTouch = Date.now();
+  window.__mvSegLog = [];
 
   function cleanName(s) {
     return s.replace(/[\/\\:*?"<>|_]/g, "-").trim().slice(0, 30).trim();
@@ -574,6 +1000,8 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   function prefixOf(d, name) {
     return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "_" + pad(d.getHours()) + pad(d.getMinutes()) + "_" + name;
   }
+  const segName = (s) => s.m.prefix + "_" + pad(s.no) + "." + ext;
+  const completeName = (m) => m.prefix + "_完成.json";
 
   function pickMime() {
     const can = (m) => { try { return MediaRecorder.isTypeSupported(m); } catch (e) { return false; } };
@@ -583,6 +1011,16 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     return { mime: "audio/webm;codecs=opus", ext: "webm" };
   }
 
+  // iOS 規定：AudioContext 要在按鈕事件裡建立／resume（呼叫端都在 click 裡）
+  function ensureAudio() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = audioCtx || new AC();
+    audioCtx.resume();
+  }
+  function micAlive() {
+    const t = micStream && micStream.getAudioTracks()[0];
+    return !!(t && t.readyState === "live");
+  }
   // 麥克風（聲音處理全關）→ ×48 → 限幅 → 錄音串流；音量條量的是放大後的聲音（參數照 mic-test v6 實測）
   async function openMic() {
     micStream = await navigator.mediaDevices.getUserMedia({
@@ -599,58 +1037,94 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     const t = micStream.getAudioTracks()[0];
     log("麥克風：" + (t.label || "未提供名稱"));
     t.addEventListener("ended", () => { log("⚠ 麥克風被中斷"); checkStopped(); });
+    if (!mimeType) { const pm = pickMime(); mimeType = pm.mime; ext = pm.ext; }
+  }
+  async function ensureMic() { if (!micAlive()) await openMic(); }
+  async function closeMic() {
+    if (micStream) micStream.getTracks().forEach((t) => t.stop());
+    micStream = null;
+    if (wakeLock) { try { await wakeLock.release(); } catch (e) {} wakeLock = null; }
   }
 
-  function startSegment() {
-    segNo++;
-    const name = meeting.prefix + "_" + pad(segNo) + "." + ext;
-    const chunks = [];
+  // 一段 seg：{ m, no, rec, chunks, startAt, stopAt, saved }；存檔時才用 seg.m 決定檔名（復原切換會改 seg.m）
+  function startSegment(m) {
+    const seg = { m: m, no: ++m.segNo, chunks: [], startAt: Date.now(), stopAt: 0 };
     const rec = new MediaRecorder(dest.stream, { mimeType: mimeType, audioBitsPerSecond: BITRATE });
-    rec.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) chunks.push(e.data); });
+    seg.rec = rec;
+    rec.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) seg.chunks.push(e.data); });
     rec.addEventListener("error", (e) => log("⚠ 錄音錯誤：" + (e.error ? e.error.name : "未知")));
     // stop 事件是非同步的：結束會議時要等每一段都存好，才能算段數
-    allSaves.push(new Promise((resolve) => {
-      rec.addEventListener("stop", () => resolve(saveSegment(name, chunks, rec.mimeType || mimeType)));
-    }));
+    seg.saved = new Promise((resolve) => {
+      rec.addEventListener("stop", () => resolve(saveSegment(seg, rec.mimeType || mimeType)));
+    });
+    m.saves.push(seg.saved);
     rec.start();
-    recorder = rec;
-    $("segInfo").textContent = "第 " + segNo + " 段";
-    setRow(name, "錄音中");
+    cur = seg;
+    $("segInfo").textContent = "第 " + seg.no + " 段";
+    setRow(segName(seg), "錄音中");
     clearTimeout(segTimer);
     segTimer = setTimeout(rotate, SEG_MS);
+  }
+  function stopSeg(seg) {
+    if (!seg) return;
+    seg.stopAt = Date.now();
+    if (seg.rec.state !== "inactive") seg.rec.stop();
   }
 
   // 每段時間到：停掉舊的，立刻用同一個串流開新的
   function rotate() {
-    if (!recorder || meeting.ended) return;
-    const old = recorder;
-    old.stop();
-    startSegment();
+    if (!cur || !meeting) return;
+    if (switchUndo) { segTimer = setTimeout(rotate, 1000); return; } // 可以復原切換的 5 秒內先不換段
+    const old = cur;
+    stopSeg(old);
+    startSegment(old.m);
   }
 
-  let saving = Promise.resolve(), allSaves = [];
-  function saveSegment(name, chunks, type) {
+  let saving = Promise.resolve();
+  function saveSegment(seg, type) {
     saving = saving.then(async () => {
-      const blob = new Blob(chunks, { type: type });
+      const m = seg.m, name = segName(seg);
+      window.__mvSegLog.push({ name: name, startAt: seg.startAt, stopAt: seg.stopAt });
+      const blob = new Blob(seg.chunks, { type: type });
       if (!blob.size) { rows.delete(name); renderUploads(); log("⚠ " + name + " 沒有錄到資料，略過"); return; }
-      meeting.segments++;
-      const rec = { kind: "segment", name: name, prefix: meeting.prefix, mimeType: type.split(";")[0],
+      m.segments++;
+      const rec = { kind: "segment", name: name, prefix: m.prefix, mimeType: type.split(";")[0],
         blob: blob, status: "pending", createdAt: Date.now() };
       await store.put(rec);
-      await saveComplete("recording");
+      await saveComplete(m);
       setRow(name, "等待");
-      log(labels([rec]) + "存好（" + mb(blob.size) + "）");
+      log(labels([rec]) + "存好：" + name + "（" + mb(blob.size) + "）");
       if (useMem) download(rec); // 暫存不能用：頁面關掉就沒了，先下載一份
       pump();
-    });
+    }).catch((e) => log("❌ 存檔失敗：" + e.message));
     return saving;
   }
 
-  function saveComplete(status) {
-    return store.put({
-      kind: "complete", name: meeting.prefix + "_完成.json", prefix: meeting.prefix, status: status, createdAt: meeting.createdAt,
-      content: { meeting: meeting.name, start: meeting.start, calendarEventId: meeting.eventId || "", attendees: [], segments: meeting.segments }
-    });
+  // 完成檔：會議沒結束前 status 是 recording（不送）；end、endReason 在結束時才有
+  function saveComplete(m) {
+    const content = { meeting: m.name, start: m.start, calendarEventId: m.eventId || "", attendees: [], segments: m.segments };
+    if (m.end) { content.end = m.end; content.endReason = m.endReason; }
+    return store.put({ kind: "complete", name: completeName(m), prefix: m.prefix, status: m.status === "done" ? "pending" : "recording",
+      createdAt: m.createdAt, updatedAt: Date.now(), content: content });
+  }
+
+  const REASON = { manual: "按結束", "switch": "切換到下一場", auto: "自動結束", recovered: "頁面重開後補送" };
+  // 這場真的結束：等每一段存好、等建日曆的結果，才把完成檔放進上傳佇列
+  async function finalize(m) {
+    if (m.status === "done") return;
+    m.status = "done";
+    await Promise.all(m.saves);
+    if (m.eventP) await m.eventP;
+    if (m.segments > 0) {
+      await saveComplete(m);
+      setRow(completeName(m), "等待");
+      log("會議結束：" + m.name + "，共 " + m.segments + " 段（" + REASON[m.endReason] + "）");
+    } else {
+      await store.del(completeName(m));
+      rows.delete(completeName(m));
+      log("⚠ 會議結束，但沒有錄到任何一段：" + m.name);
+    }
+    pump();
   }
 
   async function checkSpace() {
@@ -666,117 +1140,296 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   }
 
   // ⚡臨時會議：建日曆和開始錄音同時進行（建日曆最久要等好幾分鐘，不能讓會議等）
-  // 同一個 requestId 重送，後端 v0.3 不會建第二個活動；都失敗照樣錄音
-  function createEvent(title, name) {
-    const requestId = prefixOf(new Date(), name) + "_" + Math.random().toString(36).slice(2).padEnd(6, "0").slice(0, 6);
+  // 同一個 requestId 重送，後端不會建第二個活動、不會重寄邀請；都失敗照樣錄音
+  // 後端實驗模式（沒設 LIVE_MODE）不會邀請人，回應看不出模式 → 畫面只寫「勾選 N 人」，不寫「已寄邀請」
+  function createEvent(title, memberIds) {
+    const requestId = prefixOf(new Date(), cleanName(title)) + "_" + Math.random().toString(36).slice(2).padEnd(6, "0").slice(0, 6);
     const res = { eventId: "", mine: null };
-    $("eventMsg").textContent = "📅 建立日曆活動中…"; $("eventMsg").hidden = false;
-    res.done = request({ action: "createEvent", title: title, minutes: 60, requestId: requestId }, EVENT_RETRY_WAIT, null, "建立日曆活動")
-      .then(async (v) => {
-        if (v.ok) {
-          res.eventId = v.r.eventId;
-          $("eventMsg").textContent = "📅 日曆活動已建立";
-          log("📅 日曆活動已建立" + (v.r.duplicate ? "（重送，沿用同一個活動）" : ""));
-          if (res.mine) { res.mine.eventId = res.eventId; if (!res.mine.ended) await saveComplete("recording"); }
-        } else {
-          $("eventMsg").textContent = "⚠ 日曆活動建立失敗，照樣錄音";
-          log("⚠ 日曆活動建立失敗，照樣錄音（" + VERSION + "：" + (v.reject || v.fail) + "）");
+    const body = { action: "createEvent", title: title.slice(0, 60), minutes: QUICK_MS / MIN, requestId: requestId };
+    if (memberIds.length) body.memberIds = memberIds;
+    res.done = request(body, EVENT_RETRY_WAIT, null, "建立日曆活動").then(async (v) => {
+      const m = res.mine;
+      if (v.ok) {
+        res.eventId = v.r.eventId;
+        const unknown = Array.isArray(v.r.unknownIds) ? v.r.unknownIds.length : 0;
+        const guests = typeof v.r.guests === "number" ? v.r.guests : memberIds.length - unknown;
+        log("📅 日曆活動已建立" + (memberIds.length ? "，勾選 " + guests + " 人" : "") + (v.r.duplicate ? "（重送，沿用同一個活動）" : "") +
+          (unknown ? "；" + unknown + " 人不在成員名單" : ""));
+        if (m) {
+          m.eventId = res.eventId;
+          m.eventText = "📅 日曆活動已建立" + (memberIds.length ? "（勾選 " + guests + " 人）" : "");
+          m.eventWarn = unknown ? "⚠ 有 " + unknown + " 人不在成員名單，沒有加進日曆" : "";
+          if (m.status !== "done") await saveComplete(m);
         }
-      });
+      } else {
+        quickFailed = true;
+        if (m) { m.eventText = "⚠ 日曆活動建立失敗，照樣錄音：這場沒有對應日曆活動"; m.eventNg = true; }
+        log("⚠ 日曆活動建立失敗，照樣錄音（" + VERSION + "：" + (v.reject || v.fail) + "）");
+        updateStartBtn();
+      }
+      renderEventMsg();
+    });
     return res;
   }
 
-  async function startMeeting(quick) {
+  function uniqueName(d, name) {
+    let n = name, i = 2;
+    while (meetings.has(prefixOf(d, n)) || rows.has(prefixOf(d, n) + "_完成.json")) n = name + "-" + i++;
+    return n;
+  }
+  // t：{ name, ev }（日曆活動）｜{ name, quick: { memberIds } }｜{ name }（沒有日曆）
+  function newMeeting(t, quickRes) {
+    const now = new Date();
+    const ev = t.ev || null;
+    const m = { name: t.name, prefix: prefixOf(now, uniqueName(now, cleanName(t.name) || "會議")), start: now.toISOString(),
+      t0: Date.now(), createdAt: Date.now(), eventId: ev ? ev.id : "", eventP: quickRes ? quickRes.done : null,
+      evStart: ev ? ev.start : 0, evEnd: ev ? ev.end : 0, quick: !!quickRes,
+      // 時間到提醒的基準：日曆結束時間；臨時會議、沒有日曆、補錄已結束的會議 → 從現在起 60 分鐘
+      endAt: ev && ev.end > Date.now() ? ev.end : Date.now() + QUICK_MS,
+      segments: 0, segNo: 0, saves: [], status: "recording", end: "", endReason: "", completeSent: false, remind: 0 };
+    if (quickRes) quickRes.mine = m;
+    meetings.set(m.prefix, m);
+    if (ev) markRecorded(ev.id);
+    return m;
+  }
+
+  function renderEventMsg() {
+    const m = meeting;
+    if (!m) return;
+    let text, cls = "";
+    if (m.quick) { text = m.eventText || "📅 建立日曆活動中…"; cls = m.eventNg ? "ng" : ""; }
+    else if (m.eventId) text = "📅 日曆：" + HM(m.evStart) + "–" + HM(m.evEnd);
+    else { text = "這場沒有對應日曆活動"; cls = "ng"; }
+    $("eventMsg").textContent = text; $("eventMsg").className = "sub " + cls; $("eventMsg").hidden = false;
+    $("eventWarn").textContent = m.eventWarn || ""; $("eventWarn").hidden = !m.eventWarn;
+  }
+  function showRecUI() {
+    $("startCard").hidden = true; $("recCard").hidden = false; $("graceCard").hidden = true;
+    $("recTitle").textContent = "錄音中：" + meeting.name;
+    $("segInfo").textContent = "第 " + (cur ? cur.no : 1) + " 段";
+    renderEventMsg(); renderNext(); tick(); renderUploads();
+  }
+
+  async function startMeeting(t) {
     $("startMsg").textContent = "";
-    const raw = $("meetingName").value.trim();
-    const name = cleanName(raw);
-    if (!name) { $("startMsg").textContent = "請先輸入會議名稱"; $("meetingName").focus(); return; }
-    if (!cfg.fake() && !cfg.url()) { $("startMsg").textContent = "還沒設定上傳網址：按右上角 ⚙️（錄音會先存在手機）"; }
+    if (recBusy) return;
     if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices) {
       $("startMsg").textContent = "這個瀏覽器不能錄音（" + VERSION + "）"; return;
     }
-    // iOS 規定：AudioContext 要在按鈕事件裡建立／resume
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      audioCtx = audioCtx || new AC();
-      audioCtx.resume();
-    } catch (e) { $("startMsg").textContent = "音訊無法啟動：" + e.message; return; }
-    $("btnStart").disabled = true; $("btnQuick").disabled = true;
+    try { ensureAudio(); } catch (e) { $("startMsg").textContent = "音訊無法啟動：" + e.message; return; }
+    if (!cfg.fake() && !cfg.url()) $("startMsg").textContent = "還沒設定上傳網址：按右上角 ⚙️（錄音會先存在手機）";
+    recBusy = true; updateStartBtn(); $("btnQuick").disabled = true;
+    if (graceM) finishGrace(); // 上一場在「可以復原」期間又開新會議 → 上一場直接結束
     checkSpace();
-
-    $("eventMsg").hidden = true;
-    const ev = quick ? createEvent(raw.slice(0, 60), name) : null;
-
-    try { await openMic(); }
+    const quick = t.quick ? createEvent(t.name, t.quick.memberIds) : null;
+    try { await ensureMic(); }
     catch (e) {
       $("startMsg").textContent = "拿不到麥克風：" + e.name + "（" + VERSION + "）";
       log("❌ 麥克風失敗：" + e.name + "：" + e.message);
-      $("btnStart").disabled = false; $("btnQuick").disabled = false;
+      recBusy = false; updateStartBtn(); $("btnQuick").disabled = false;
       return;
     }
-    const pm = pickMime(); mimeType = pm.mime; ext = pm.ext;
-
-    const now = new Date();
-    meeting = { name: raw, prefix: prefixOf(now, name), start: now.toISOString(), eventId: ev ? ev.eventId : "",
-      eventP: ev ? ev.done : null, segments: 0, ended: false, completeSent: false, createdAt: Date.now(), t0: Date.now() };
-    if (ev) ev.mine = meeting;
-    segNo = 0;
-    await saveComplete("recording");
-    log("開始錄音：" + meeting.prefix + "（" + VERSION + "，每段 " + SEG_MS / 1000 + " 秒）");
-
-    $("startCard").hidden = true; $("recCard").hidden = false;
-    $("recTitle").textContent = "錄音中：" + raw;
-    startSegment();
+    const m = newMeeting(t, quick);
+    await saveComplete(m);
+    meeting = m; lastTouch = Date.now();
+    log("開始錄音：" + m.prefix + "（" + VERSION + "，每段 " + SEG_MS / 1000 + " 秒" + (m.eventId ? "，日曆 " + HM(m.evStart) + "–" + HM(m.evEnd) : m.quick ? "，臨時會議" : "，沒有日曆") + "）");
+    startSegment(m);
     keepAwake();
-    elapsedTimer = setInterval(() => {
-      const s = Math.floor((Date.now() - meeting.t0) / 1000);
-      $("elapsed").textContent = pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60);
-    }, 500);
+    showRecUI();
+    recBusy = false; updateStartBtn(); $("btnQuick").disabled = false;
   }
 
-  // 結束要按兩次，避免誤觸
-  let endArmed = 0;
-  $("btnEnd").addEventListener("click", () => {
-    if (!endArmed) {
-      $("btnEnd").textContent = "再按一次確認結束";
-      endArmed = setTimeout(() => { endArmed = 0; $("btnEnd").textContent = "結束會議"; }, 4000);
-      return;
+  // 停掉錄音（結束、自動結束共用）：最後一段存好後才關麥克風
+  function stopRecording() {
+    clearTimeout(segTimer);
+    const last = cur;
+    stopSeg(last); cur = null; meeting = null;
+    if (last) last.saved.then(() => { if (!meeting) closeMic(); }); else closeMic();
+    disarmEnd();
+    $("recCard").hidden = true; $("startCard").hidden = false;
+    $("endBanner").hidden = true; $("undoBar").hidden = true; $("stoppedBanner").hidden = true;
+    updateStartBtn(); renderEvents(); renderUploads();
+  }
+
+  // 層 1：手動結束（按兩次）→ 2 分鐘內可以「繼續錄這場」，時間到才送完成檔
+  let graceM = null, graceUntil = 0, graceTimer = 0;
+  function endMeeting() {
+    const m = meeting;
+    if (!m) return;
+    finishUndo();
+    m.status = "grace"; m.end = new Date().toISOString(); m.endReason = "manual";
+    stopRecording();
+    saveComplete(m);
+    graceM = m; graceUntil = Date.now() + GRACE_MS;
+    clearTimeout(graceTimer); graceTimer = setTimeout(finishGrace, GRACE_MS);
+    $("graceCard").hidden = false; tick();
+    log("會議結束：" + m.name + "（" + dur(GRACE_MS) + "內可以按「繼續錄這場」）");
+  }
+  function finishGrace() {
+    const m = graceM;
+    if (!m) return;
+    graceM = null; clearTimeout(graceTimer);
+    $("graceCard").hidden = true;
+    finalize(m);
+  }
+  async function resumeGrace() {
+    const m = graceM;
+    if (!m || recBusy) return;
+    try { ensureAudio(); } catch (e) { log("❌ 音訊無法啟動：" + e.message); return; }
+    recBusy = true;
+    clearTimeout(graceTimer); graceM = null; $("graceCard").hidden = true;
+    try { await ensureMic(); }
+    catch (e) {
+      log("❌ 無法繼續錄這場（麥克風：" + e.name + "），完成檔照常送出");
+      recBusy = false; finalize(m); return;
     }
-    clearTimeout(endArmed); endArmed = 0;
-    endMeeting();
+    m.status = "recording"; m.end = ""; m.endReason = "";
+    await saveComplete(m);
+    meeting = m; lastTouch = Date.now();
+    startSegment(m);
+    keepAwake();
+    showRecUI();
+    recBusy = false; updateStartBtn();
+    log("繼續錄：" + m.name + "（同一份會議，第 " + m.segNo + " 段起）");
+  }
+  $("btnGraceResume").addEventListener("click", resumeGrace);
+
+  // 連開會議：一鍵切換，錄音不中斷（停舊的一段，立刻用同一個串流開新會議的第 01 段）
+  // 切到日曆活動有 5 秒「復原切換」；⚡臨時會議已經建活動、寄邀請，不能復原
+  let switchUndo = null;
+  async function switchTo(t) {
+    const old = meeting;
+    if (!old) return;
+    if (t.ev && t.ev.id === old.eventId) return;
+    finishUndo();
+    const quick = t.quick ? createEvent(t.name, t.quick.memberIds) : null;
+    const m = newMeeting(t.ev ? { name: t.ev.title, ev: t.ev } : t, quick);
+    clearTimeout(segTimer);
+    const oldSeg = cur;
+    stopSeg(oldSeg);
+    old.status = "switching"; old.end = new Date().toISOString(); old.endReason = "switch";
+    meeting = m; lastTouch = Date.now();
+    startSegment(m);
+    const ready = Promise.all([saveComplete(old), saveComplete(m)]);
+    log("切換：" + old.name + " → " + m.name + "（錄音不中斷）");
+    showRecUI();
+    if (t.ev) {
+      switchUndo = { old: old, m: m, ready: ready, until: Date.now() + UNDO_MS, timer: setTimeout(finishUndo, UNDO_MS) };
+      $("undoText").textContent = "已切換到：" + m.name;
+      $("undoBar").hidden = false; tick();
+    } else {
+      finalize(old);
+    }
+  }
+  function finishUndo() {
+    const u = switchUndo;
+    if (!u) return;
+    switchUndo = null; clearTimeout(u.timer);
+    $("undoBar").hidden = true;
+    finalize(u.old);
+  }
+  // 復原切換：新會議目前錄的這段改成上一場的下一段，新會議整個取消
+  async function undoSwitch() {
+    const u = switchUndo;
+    if (!u) return;
+    switchUndo = null; clearTimeout(u.timer);
+    $("undoBar").hidden = true;
+    await u.ready;
+    const seg = cur;
+    rows.delete(segName(seg));
+    seg.m = u.old; seg.no = ++u.old.segNo;
+    u.old.saves.push(seg.saved);
+    u.old.status = "recording"; u.old.end = ""; u.old.endReason = "";
+    meetings.delete(u.m.prefix);
+    await store.del(completeName(u.m)); rows.delete(completeName(u.m));
+    await saveComplete(u.old);
+    meeting = u.old;
+    setRow(segName(seg), "錄音中");
+    log("復原切換：繼續錄 " + u.old.name + "（第 " + seg.no + " 段）");
+    showRecUI();
+  }
+  $("btnUndo").addEventListener("click", undoSwitch);
+  $("btnSwitchNext").addEventListener("click", () => { const nx = nextEvent(meeting, Date.now()); if (nx) switchTo({ ev: nx }); });
+  $("btnSwitchB").addEventListener("click", () => { const nx = nextEvent(meeting, Date.now()); if (nx) switchTo({ ev: nx }); });
+  $("btnOther").addEventListener("click", () => { $("evSheet").hidden = false; renderEvSheet(); loadEvents("選其他會議"); });
+  $("btnEvSheetClose").addEventListener("click", () => { $("evSheet").hidden = true; });
+
+  // 層 3：超過預定結束 60 分鐘、而且 60 分鐘都沒碰畫面 → 自動結束（不等 2 分鐘）
+  function autoEnd() {
+    const m = meeting;
+    finishUndo();
+    m.end = new Date().toISOString(); m.endReason = "auto";
+    stopRecording();
+    $("autoEndText").textContent = "⏹ 已自動結束：" + m.name + "（超過預定結束 " + dur(AUTOEND_MS) + "都沒有操作）";
+    $("autoEndBanner").hidden = false;
+    log("⏹ 自動結束（超過預定結束 " + dur(AUTOEND_MS) + "）：" + m.name);
+    finalize(m);
+  }
+  ["pointerdown", "touchstart", "keydown", "click"].forEach((t) => document.addEventListener(t, () => { lastTouch = Date.now(); }, true));
+
+  // 每秒：計時、層 2 時間到提醒、層 3 自動結束、復原倒數
+  function tick() {
+    const now = Date.now();
+    const m = meeting;
+    if (m) {
+      const s = Math.floor((now - m.t0) / 1000);
+      $("elapsed").textContent = pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60);
+      if (now - Math.max(m.endAt, lastTouch) >= AUTOEND_MS && now >= m.endAt + AUTOEND_MS) { autoEnd(); return; }
+      // 層 2：錄音不會自動停（會議常延長）；黃色常駐橫幅，之後每 15 分鐘再提醒（變紅）
+      const over = now - m.endAt;
+      $("endBanner").hidden = over < 0;
+      if (over >= 0) {
+        const n = Math.floor(over / REMIND_MS);
+        if (n > m.remind || !m.remindAt) {
+          m.remind = n; m.remindAt = now;
+          log("⏰ " + m.name + " 預定 " + HM(m.endAt) + " 結束" + (n ? "（第 " + (n + 1) + " 次提醒）" : ""));
+          if (navigator.vibrate) navigator.vibrate(300);
+        }
+        $("endBanner").className = "banner row " + (n ? "ng" : "warn");
+        $("endText").textContent = "⏰ " + m.name + " 預定 " + HM(m.endAt) + " 結束" + (over >= MIN ? "（已超過 " + Math.floor(over / MIN) + " 分鐘）" : "");
+        const nx = nextEvent(m, now);
+        const showNx = !!(nx && nx.start <= now + 10 * MIN);
+        $("btnSwitchB").hidden = !showNx;
+        if (showNx) $("btnSwitchB").textContent = "切換到：" + nx.title;
+      }
+    }
+    if (graceM) {
+      const left = Math.max(0, Math.ceil((graceUntil - now) / 1000));
+      $("graceText").textContent = "已結束：" + graceM.name + "（" + Math.floor(left / 60) + ":" + pad(left % 60) + " 後送出）";
+    }
+    if (switchUndo) $("btnUndo").textContent = "↩ 復原切換（" + Math.max(0, Math.ceil((switchUndo.until - now) / 1000)) + "）";
+    if (now - lastEvRender >= 30000) renderEvents();
+  }
+  setInterval(tick, 1000);
+  $("btnExtend").addEventListener("click", () => {
+    if (!meeting) return;
+    meeting.endAt = Math.max(meeting.endAt, Date.now()) + EXTEND_MS; meeting.remind = 0; meeting.remindAt = 0;
+    log("延長 15 分鐘：預定 " + HM(meeting.endAt) + " 結束");
+    tick();
   });
 
-  async function endMeeting() {
-    meeting.ended = true;
-    clearTimeout(segTimer); clearInterval(elapsedTimer);
-    if (recorder && recorder.state !== "inactive") recorder.stop();
-    recorder = null;
-    await Promise.all(allSaves);
-    allSaves = [];
-    if (micStream) micStream.getTracks().forEach((t) => t.stop());
-    if (wakeLock) { try { await wakeLock.release(); } catch (e) {} wakeLock = null; }
-    $("btnEnd").textContent = "結束會議";
-    // 完成檔要帶日曆活動 ID：等建日曆的結果（失敗也會結束）
-    if (meeting.eventP) { $("btnEnd").disabled = true; log("等日曆活動建立結果…"); await meeting.eventP; $("btnEnd").disabled = false; }
-    $("recCard").hidden = true; $("startCard").hidden = false;
-    $("btnStart").disabled = false; $("btnQuick").disabled = false;
-    if (meeting.segments > 0) {
-      await saveComplete("pending");
-      setRow(meeting.prefix + "_完成.json", "等待");
-      log("會議結束，共 " + meeting.segments + " 段");
-    } else {
-      await store.del(meeting.prefix + "_完成.json");
-      rows.delete(meeting.prefix + "_完成.json");
-      log("⚠ 會議結束，但沒有錄到任何一段");
-    }
-    pump();
+  // 結束要按兩次，避免誤觸（下方按鈕和時間到橫幅共用）
+  let endArmed = 0;
+  function disarmEnd() {
+    clearTimeout(endArmed); endArmed = 0;
+    $("btnEnd").textContent = "結束會議"; $("btnEndB").textContent = "結束會議";
   }
+  function pressEnd() {
+    if (!endArmed) {
+      $("btnEnd").textContent = "再按一次確認結束"; $("btnEndB").textContent = "再按一次確認結束";
+      endArmed = setTimeout(disarmEnd, 4000);
+      return;
+    }
+    disarmEnd();
+    endMeeting();
+  }
+  $("btnEnd").addEventListener("click", pressEnd);
+  $("btnEndB").addEventListener("click", pressEnd);
 
   // 錄音停了的處理：切回畫面時檢查，停了就警告，讓使用者接下一段
   function isStopped() {
-    if (!meeting || meeting.ended) return false;
-    const t = micStream && micStream.getAudioTracks()[0];
-    return !recorder || recorder.state === "inactive" || !t || t.readyState === "ended";
+    if (!meeting) return false;
+    return !cur || cur.rec.state === "inactive" || !micAlive();
   }
   function checkStopped() {
     if (isStopped()) {
@@ -787,13 +1440,14 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   $("btnResume").addEventListener("click", async () => {
     try {
       audioCtx.resume();
-      if (recorder && recorder.state !== "inactive") recorder.stop();
+      clearTimeout(segTimer);
+      stopSeg(cur);
       if (micStream) micStream.getTracks().forEach((t) => t.stop());
       await openMic();
-      startSegment();
+      startSegment(meeting);
       keepAwake();
       $("stoppedBanner").hidden = true;
-      log("繼續錄音：第 " + segNo + " 段");
+      log("繼續錄音：第 " + cur.no + " 段");
     } catch (e) { log("❌ 無法繼續錄音：" + e.name + "：" + e.message); }
   });
 
@@ -801,7 +1455,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   let avgPow = 0, lowSince = 0;
   const buf = new Float32Array(2048);
   setInterval(() => {
-    if (!analyser || !meeting || meeting.ended) return;
+    if (!analyser || !meeting) return;
     analyser.getFloatTimeDomainData(buf);
     let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
     const pow = sum / buf.length;
@@ -820,8 +1474,8 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     catch (e) { $("wakeBanner").hidden = false; log("⚠ 螢幕常亮失敗：" + e.name); }
   }
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) autoRetry("回到畫面");
-    if (!meeting || meeting.ended) return;
+    if (!document.hidden) { autoRetry("回到畫面"); loadEvents("回到畫面"); }
+    if (!meeting) return;
     if (document.hidden) { hiddenAt = Date.now(); log("⚠ 切到背景"); return; }
     log("回到畫面（離開 " + Math.round((Date.now() - hiddenAt) / 1000) + " 秒）");
     if (audioCtx && audioCtx.state !== "running") audioCtx.resume();
@@ -829,12 +1483,13 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     checkStopped();
   });
 
-  // ---------- 自動再試、離開提醒 ----------
+  // ---------- 自動再試、行事曆更新、離開提醒 ----------
   window.addEventListener("online", () => autoRetry("網路恢復"));
   setInterval(() => autoRetry("定時"), AUTORETRY_MS);
+  setInterval(() => { if (meeting) loadEvents("錄音中定時"); }, EVENTS_REFRESH_MS);
   // iOS 可能不支援，盡力而為
   window.addEventListener("beforeunload", (e) => {
-    if ((meeting && !meeting.ended) || leftCount > 0) { e.preventDefault(); e.returnValue = ""; }
+    if (meeting || graceM || switchUndo || leftCount > 0) { e.preventDefault(); e.returnValue = ""; }
   });
 
   // ---------- 設定畫面 ----------
@@ -855,7 +1510,10 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   $("btnGear").addEventListener("click", openSettings);
   $("btnRejectGear").addEventListener("click", openSettings);
   $("btnClose").addEventListener("click", () => { $("sheet").hidden = true; });
-  $("btnSave").addEventListener("click", () => { if (saveSettings()) autoRetry("設定已儲存"); });
+  $("btnSave").addEventListener("click", () => {
+    if (!saveSettings()) return;
+    autoRetry("設定已儲存"); loadEvents("設定已儲存"); loadMembers("設定已儲存");
+  });
   $("btnPing").addEventListener("click", async () => {
     saveSettings();
     $("cfgMsg").textContent = "連線中…"; $("cfgMsg").className = "msg";
@@ -869,8 +1527,16 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     $("setupBanner").hidden = !!(cfg.fake() || cfg.url());
   }
 
-  $("btnStart").addEventListener("click", () => startMeeting(false));
-  $("btnQuick").addEventListener("click", () => startMeeting(true));
+  $("btnStart").addEventListener("click", () => {
+    const raw = $("meetingName").value.trim();
+    if (!cleanName(raw)) { $("startMsg").textContent = "請先輸入會議名稱"; $("meetingName").focus(); return; }
+    const ev = events && events.find((e) => e.id === selId);
+    if (ev) startMeeting({ name: raw, ev: ev });
+    else if (manualAllowed()) startMeeting({ name: raw });
+  });
+  $("meetingName").addEventListener("input", updateStartBtn);
+  $("btnEvRefresh").addEventListener("click", () => loadEvents("🔄"));
+  $("btnEvRefresh2").addEventListener("click", () => loadEvents("🔄"));
 
   // ---------- 開頁 ----------
   $("ver").textContent = VERSION;
@@ -904,6 +1570,10 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
         if (r.kind === "complete" && r.status === "recording") {
           if (r.content.segments > 0) {
             r.status = "pending";
+            if (!r.content.endReason) { // 結束後「可以復原」期間被關掉的，保留原本的結束原因
+              r.content.end = new Date(r.updatedAt || r.createdAt).toISOString();
+              r.content.endReason = "recovered";
+            }
             await store.put(r);
             log("⚠ 上次的會議沒有正常結束：" + r.prefix + "（已存的 " + r.content.segments + " 段會照常上傳）");
           } else {
@@ -917,6 +1587,9 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
       autoRetry("開頁");
     } catch (e) { log("讀取待重送清單失敗：" + e.message); }
   })();
+  renderEvents();
+  loadEvents("開頁");
+  if (!members) loadMembers("開頁");
   log("開啟 " + VERSION);
 })();
 </script>
