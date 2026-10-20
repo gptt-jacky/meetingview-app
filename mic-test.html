@@ -78,6 +78,7 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
           <option value="4">×4</option>
           <option value="8">×8</option>
           <option value="16">×16</option>
+          <option value="32">×32</option>
         </select>
       </label>
       <label class="wide">錄音格式
@@ -160,7 +161,7 @@ textarea { width: 100%; min-height: 200px; font-size: 12px; color: var(--fg); ba
   async function detectEnv() {
     const env = {
       瀏覽器: navigator.userAgent,
-      測試頁版本: "v3（10/20 軟體放大＋音量數字）",
+      測試頁版本: "v4（10/20 加 ×32）",
       網址來源: location.origin,
       "HTTPS 安全環境": yn(window.isSecureContext),
       包在框架裡: inIframe() ? "是" : "否",
