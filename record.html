@@ -1,296 +1,551 @@
 <!DOCTYPE html>
-<!-- Meeting View 手機錄音頁：分段錄音（×48 放大、64 kbps）、先存手機再上傳到 Apps Script
+<!-- Meeting View 手機錄音頁：分段錄音（×64 放大、64 kbps）、先存手機再上傳到 Apps Script
      v2：嚴格判斷上傳成功、掉回應自動重送／定時再試、上傳提示、下載到手機備援
      v3：從今天的行事曆選會議、結束三層配套（可復原／時間到提醒／超時自動結束）、連開會議一鍵切換
-     v4：⚡臨時會議先選與會人員（部門 → 組），建日曆時寄邀請
+     v4：臨時會議先選與會人員（部門 → 組），建日曆時寄邀請
+     v4.1：讀後端 createEvent 的 invited，分開顯示「已寄邀請 N 人」和「實驗模式，沒有邀請任何人」
+     v4.2：每段改成 20 分鐘（10 分鐘太細，NotebookLM 來源很快就滿）
+     v5：介面改版（像 iPhone 內建 App）：四個畫面（第一次設定／今天的會議／錄音中／完成）、亮暗切換、不用 emoji、結束用底部確認選單、
+         紀錄收進設定頁的診斷資訊、可以加到主畫面；臨時會議讀後端 v0.6.2 的 added（加入與會者、不寄邀請）
+     v5.1：「我是誰」（todayEvents、createEvent 帶 memberId，清單分我的會議／其他會議）、設定連結（#setup=）、上傳錄音檔、
+           臨時會議移到「其他方式」並在送出前確認、?gain= 放大倍數（預設 48 → 64，10/21 Jacky：要更大聲）
      放在公開的 GitHub Pages：不能寫死任何網址、key、email、會議內容
-     最後更新: 2026/10/20 -->
+     最後更新: 2026/10/21 -->
 <html lang="zh-Hant-TW">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Meeting View 錄音</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="MV 錄音">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <style>
+/* 色票接近 iOS 系統色：預設跟手機的亮暗模式；設定頁可以固定亮色或暗色（html 的 data-theme） */
 :root {
-  --bg: #0f151b; --surface: #18212a; --fg: #e6ecf1; --muted: #93a1ae; --line: #2a3742;
-  --accent: #5bb6cc; --rec: #ff6b5e; --warn: #f0a640; --ok: #5fc58a;
+  --bg: #f2f2f7; --card: #ffffff; --fg: #000000; --muted: #6e6e73; --sep: #c6c6c8; --fill: #e5e5ea;
+  --blue: #007aff; --red: #ff3b30; --green: #34c759; --orange: #ff9500; --on: #ffffff;
+  --dim: rgb(0 0 0 / .4); --bar: rgb(242 242 247 / .92); --seg-on: #ffffff;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #000000; --card: #1c1c1e; --fg: #ffffff; --muted: #98989d; --sep: #38383a; --fill: #2c2c2e;
+    --blue: #0a84ff; --red: #ff453a; --green: #30d158; --orange: #ff9f0a;
+    --dim: rgb(0 0 0 / .6); --bar: rgb(0 0 0 / .9); --seg-on: #636366;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #000000; --card: #1c1c1e; --fg: #ffffff; --muted: #98989d; --sep: #38383a; --fill: #2c2c2e;
+  --blue: #0a84ff; --red: #ff453a; --green: #30d158; --orange: #ff9f0a;
+  --dim: rgb(0 0 0 / .6); --bar: rgb(0 0 0 / .9); --seg-on: #636366;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
-  font-family: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
-  font-size: 16px; line-height: 1.5; padding: 16px;
+  font-family: -apple-system, "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
+  font-size: 17px; line-height: 1.45; -webkit-tap-highlight-color: transparent;
 }
-.app { max-width: 560px; margin: 0 auto; display: grid; gap: 14px; }
-.app > * { min-width: 0; }
-header { display: flex; align-items: center; gap: 10px; }
-h1 { margin: 0; font-size: 18px; white-space: nowrap; }
-.ver { font-size: 12px; color: var(--muted); }
-.gear { margin-left: auto; font-size: 22px; padding: 6px 12px; }
-h2 { margin: 0 0 10px; font-size: 14px; color: var(--muted); letter-spacing: .08em; }
-.hrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.hrow button { padding: 6px 12px; font-size: 16px; }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
-.notes { font-size: 13px; color: var(--muted); display: grid; gap: 2px; padding: 10px 14px; }
-.banner { border-radius: 12px; padding: 10px 14px; font-weight: 600; }
-.banner.ng { background: #3a1c1a; color: var(--rec); }
-.banner.warn { background: #3a2b14; color: var(--warn); }
-.banner.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.banner.row > span { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
-.banner .x { padding: 4px 10px; font-size: 16px; background: transparent; border: 0; color: inherit; }
-.banner .small { padding: 8px 12px; font-size: 14px; }
-.bbtns { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
-.bbtns button { flex: 1 1 auto; overflow-wrap: anywhere; }
-.toast {
-  position: fixed; top: 12px; left: 16px; right: 16px; max-width: 528px; margin: 0 auto; z-index: 20;
-  background: var(--ok); color: var(--bg); font-weight: 700; border-radius: 12px; padding: 12px 14px; text-align: center;
-}
-.mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
-label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
-input[type=text], input[type=url], input[type=password], input[type=search] {
-  font: inherit; font-size: 17px; color: var(--fg); background: var(--bg);
-  border: 1px solid var(--line); border-radius: 10px; padding: 12px; width: 100%;
-}
-.check { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--fg); }
-.check input { width: 22px; height: 22px; }
-.btns { display: grid; gap: 10px; margin-top: 12px; }
-.btns.two { grid-template-columns: 1fr 1fr; }
-button {
-  font: inherit; font-weight: 700; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
-  border-radius: 14px; padding: 18px 12px; font-size: 18px; cursor: pointer;
-}
-button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-button.stop { background: var(--rec); color: var(--bg); border-color: var(--rec); }
-button.small { padding: 10px 12px; font-size: 15px; }
-button:disabled { opacity: .45; cursor: default; }
-/* 今天的會議 */
-.evlist { display: grid; gap: 8px; }
-.evlist + .msg:empty { display: none; }
-button.ev {
-  display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: center; text-align: left;
-  padding: 14px; font-size: 17px; font-weight: 600; min-width: 0;
-}
-.ev .t { font-size: 14px; color: var(--muted); }
-.ev .ti { overflow-wrap: anywhere; min-width: 0; }
-.ev .tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
-.tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--line); font-weight: 700; }
-.tag.now { background: var(--ok); color: var(--bg); }
-.tag.soon { background: var(--warn); color: var(--bg); }
-.tag.rec { background: transparent; border: 1px solid var(--muted); color: var(--muted); }
-button.ev.later, button.ev.ended { color: var(--muted); }
-button.ev.sel { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); color: var(--fg); }
-details summary { cursor: pointer; color: var(--muted); padding: 8px 0; font-size: 14px; }
-.next { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
-.next .ti { font-weight: 700; overflow-wrap: anywhere; }
-/* 錄音 */
-.timer { font-size: 52px; font-weight: 600; text-align: center; line-height: 1.1; }
-.sub { text-align: center; color: var(--muted); overflow-wrap: anywhere; }
-.meter { height: 14px; border-radius: 7px; background: var(--bg); overflow: hidden; margin-top: 12px; }
-.meter div { height: 100%; width: 0; background: var(--ok); }
-.db { text-align: center; font-size: 14px; color: var(--muted); margin-top: 4px; }
-/* 上傳 */
-.uploads { list-style: none; margin: 0; padding: 0; display: grid; }
-.uploads li { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
-.uploads li:first-child { border-top: 0; }
-.uploads li.grp { display: block; color: var(--muted); font-size: 13px; font-weight: 700; padding-top: 14px; overflow-wrap: anywhere; }
-.uploads .n { overflow-wrap: anywhere; min-width: 0; }
-.uploads .s { white-space: nowrap; }
-.uploads .acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
-.uploads .acts button { padding: 8px 12px; font-size: 14px; border-radius: 10px; }
-.uploads .acts button.warn { color: var(--warn); }
-.summary { margin-top: 8px; font-weight: 600; }
-.summary.big { font-size: 20px; line-height: 1.4; }
-.ok { color: var(--ok); } .ng { color: var(--rec); } .warn { color: var(--warn); }
-pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; color: var(--muted); max-height: 220px; overflow: auto; }
-/* 彈出畫面 */
-.sheet { position: fixed; inset: 0; background: rgb(0 0 0 / .55); display: grid; place-items: center; padding: 16px; z-index: 10; }
-.sheet .card { width: min(480px, 100%); display: grid; gap: 12px; }
-.sheet .card > * { min-width: 0; }
-.sheet .card.tall { max-height: calc(100vh - 32px); overflow-y: auto; }
-.chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
-.chips button { flex: 0 0 auto; padding: 10px 14px; font-size: 15px; border-radius: 999px; }
-.chips button.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-.members { max-height: 42vh; overflow-y: auto; border-top: 1px solid var(--line); }
-.mem { display: flex; align-items: center; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--line); font-size: 16px; color: var(--fg); }
-.mem input { width: 22px; height: 22px; flex: 0 0 auto; }
-.mem .nm { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.mem small { flex: 0 1 auto; color: var(--muted); font-size: 13px; text-align: right; }
-.msg { font-size: 14px; min-height: 1.5em; }
+.wrap { max-width: 560px; margin: 0 auto; padding: 0 16px; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
 [hidden] { display: none !important; }
+
+/* 畫面：一次只顯示一個 */
+.screen { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); }
+.screen > .wrap { width: 100%; }
+.body { flex: 1 0 auto; display: grid; gap: 16px; align-content: start; padding-bottom: 24px; }
+.body > * { min-width: 0; }
+.nav { display: flex; align-items: center; justify-content: flex-end; gap: 4px; min-height: 44px; padding-top: 6px; }
+.nav .left { margin-right: auto; color: var(--muted); font-size: 15px; }
+.icon-btn { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 22px; background: transparent; color: var(--blue); cursor: pointer; padding: 0; }
+.icon-btn:active { background: var(--fill); }
+.text-btn { border: 0; background: transparent; color: var(--blue); font: inherit; font-size: 17px; padding: 10px 8px; cursor: pointer; min-height: 44px; }
+.text-btn:disabled { color: var(--muted); opacity: .6; cursor: default; }
+h1 { margin: 0; font-size: 32px; line-height: 1.15; font-weight: 700; letter-spacing: .01em; overflow-wrap: anywhere; }
+.cap { margin: 0 0 6px 16px; font-size: 13px; color: var(--muted); }
+.foot-note { margin: 6px 16px 0; font-size: 13px; color: var(--muted); }
+.sample { display: inline-block; font-size: 12px; font-weight: 600; color: var(--orange); border: 1px solid currentColor; border-radius: 6px; padding: 1px 6px; }
+
+/* 下方固定的主要按鈕 */
+.bar { position: sticky; bottom: 0; z-index: 5; background: var(--bar); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  padding: 10px 0 calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--sep); }
+.bar .wrap { display: grid; gap: 4px; }
+.btn { font: inherit; font-size: 17px; font-weight: 600; min-height: 50px; border-radius: 14px; border: 0; padding: 12px 16px; cursor: pointer; width: 100%; }
+.btn.primary { background: var(--blue); color: var(--on); }
+.btn.danger { background: var(--red); color: var(--on); }
+.btn.plain { background: var(--card); color: var(--blue); }
+.btn:disabled { background: var(--fill); color: var(--muted); cursor: default; }
+.btn.small { min-height: 40px; font-size: 15px; padding: 8px 14px; border-radius: 10px; width: auto; white-space: nowrap; flex: 0 0 auto; }
+.row-btns { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+
+/* iOS 清單 */
+.list { background: var(--card); border-radius: 12px; overflow: hidden; }
+.list > * + * { border-top: 1px solid var(--sep); }
+.item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; min-height: 50px; min-width: 0; }
+.item > .grow { flex: 1 1 auto; min-width: 0; }
+.item input[type=text], .item input[type=url], .item input[type=password] { border: 0; background: transparent; padding: 0; min-height: 26px; }
+button.ev { display: grid; grid-template-columns: 3.4em 1fr auto; align-items: center; gap: 2px 12px; width: 100%; text-align: left;
+  background: transparent; border: 0; color: var(--fg); font: inherit; padding: 12px 16px; min-height: 60px; cursor: pointer; }
+button.ev:active { background: var(--fill); }
+.ev .t { font-size: 17px; font-weight: 600; grid-row: 1 / span 2; align-self: start; padding-top: 1px; }
+.ev .ti { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+.ev .sub { grid-column: 2; font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0 8px; }
+.ev .ck { grid-column: 3; grid-row: 1 / span 2; color: var(--blue); visibility: hidden; }
+button.ev.sel .ck { visibility: visible; }
+button.ev.later .t, button.ev.ended .t, button.ev.ended .ti { color: var(--muted); }
+.tag { font-size: 13px; font-weight: 600; }
+.tag.now { color: var(--green); } .tag.soon { color: var(--orange); } .tag.rec, .tag.ended { color: var(--muted); }
+details.more > summary { list-style: none; cursor: pointer; color: var(--muted); font-size: 15px; padding: 8px 16px; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more[open] > summary { padding-bottom: 6px; }
+.msg { font-size: 15px; color: var(--muted); padding: 0 16px; }
+.msg:empty { display: none; }
+.msg.ng { color: var(--red); } .msg.ok { color: var(--green); } .msg.warn { color: var(--orange); }
+
+/* 細的狀態列：顏色點＋一句話（＋需要動手時的按鈕） */
+.strips { display: grid; gap: 8px; }
+.strips:not(:has(> :not([hidden]))) { display: none; }
+div[id^=stripSlot]:not(:has(.strip:not([hidden]))), div[id^=upSlot]:not(:has(#upCard:not([hidden]))) { display: none; }
+.strip { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; background: var(--card); border-radius: 12px; padding: 10px 12px 10px 14px; font-size: 15px; }
+.strip > span { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.strip::before { content: ""; width: 8px; height: 8px; border-radius: 4px; background: var(--orange); flex: 0 0 auto; }
+.strip.ng::before { background: var(--red); } .strip.ok::before { background: var(--green); } .strip.info::before { background: var(--blue); }
+.strip .btn.small { background: var(--fill); color: var(--blue); }
+.strip .btn.small.danger { background: var(--red); color: var(--on); }
+.strip .btn.small.primary { background: var(--blue); color: var(--on); }
+.strip .x { width: 32px; height: 32px; color: var(--muted); }
+.strip .x .ico { width: 18px; height: 18px; }
+.strip .bbtns { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; padding-left: 18px; }
+
+/* 錄音中 */
+.rec-head { text-align: center; display: grid; gap: 4px; padding-top: 8px; }
+.rec-dot { display: inline-flex; align-items: center; gap: 6px; justify-content: center; color: var(--red); font-size: 15px; font-weight: 600; }
+.rec-dot::before { content: ""; width: 10px; height: 10px; border-radius: 5px; background: var(--red); animation: blink 1.6s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .rec-dot::before { animation: none; } }
+#recTitle { font-size: 24px; font-weight: 700; overflow-wrap: anywhere; }
+.timer { font-size: 64px; font-weight: 300; text-align: center; line-height: 1.05; letter-spacing: -.01em; margin-top: 12px; }
+.meter { height: 8px; border-radius: 4px; background: var(--fill); overflow: hidden; }
+.meter div { height: 100%; width: 0; background: var(--green); transition: width .1s linear; }
+.center { text-align: center; }
+.small-muted { font-size: 14px; color: var(--muted); text-align: center; overflow-wrap: anywhere; }
+.small-muted.ng { color: var(--red); } .small-muted.warn { color: var(--orange); }
+
+/* 完成 */
+.done-head { display: grid; justify-items: stretch; gap: 10px; text-align: center; padding-top: 40px; }
+.done-head .hero { justify-self: center; width: 84px; height: 84px; stroke-width: 1.6; color: var(--green); }
+.done-head.busy .hero { color: var(--blue); } .done-head.ng .hero { color: var(--red); }
+#doneTitle { font-size: 28px; font-weight: 700; }
+.summary { font-size: 15px; color: var(--muted); text-align: center; }
+.summary.ng { color: var(--red); } .summary.ok { color: var(--green); }
+
+/* 上傳清單（有檔案還沒上傳時才出現） */
+.uploads { list-style: none; margin: 0; padding: 0; }
+.uploads li { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; padding: 10px 16px; font-size: 14px; border-top: 1px solid var(--sep); }
+.uploads li:first-child { border-top: 0; }
+.uploads li.grp { display: block; color: var(--muted); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.uploads .n { overflow-wrap: anywhere; min-width: 0; }
+.uploads .s { white-space: nowrap; font-weight: 600; }
+.uploads .acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.uploads .acts button { font: inherit; font-size: 14px; border: 0; border-radius: 8px; padding: 6px 12px; background: var(--fill); color: var(--blue); cursor: pointer; }
+.uploads .acts button.warn { color: var(--red); }
+.ok { color: var(--green); } .ng { color: var(--red); } .warn { color: var(--orange); }
+
+/* 設定 */
+label.field { display: grid; gap: 2px; font-size: 13px; color: var(--muted); padding: 10px 16px; }
+input[type=text], input[type=url], input[type=password], input[type=search] {
+  font: inherit; font-size: 17px; color: var(--fg); background: var(--fill); border: 0; border-radius: 10px; padding: 10px 12px; width: 100%; min-width: 0;
+}
+label.field input { background: transparent; padding: 4px 0; border-radius: 0; }
+.keyrow { display: flex; align-items: center; gap: 4px; padding: 10px 6px 10px 16px; }
+.keyrow .icon-btn { width: 40px; height: 40px; color: var(--muted); }
+.switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; min-height: 50px; }
+.switch input { appearance: none; -webkit-appearance: none; width: 51px; height: 31px; border-radius: 16px; background: var(--fill); position: relative; cursor: pointer; flex: 0 0 auto; margin: 0; transition: background .2s; }
+.switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgb(0 0 0 / .25); transition: transform .2s; }
+.switch input:checked { background: var(--green); }
+.switch input:checked::after { transform: translateX(20px); }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--fill); border-radius: 9px; padding: 2px; margin: 10px 16px; }
+.seg button { font: inherit; font-size: 15px; font-weight: 500; border: 0; background: transparent; color: var(--fg); padding: 6px 4px; border-radius: 7px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--seg-on); box-shadow: 0 1px 3px rgb(0 0 0 / .18); font-weight: 600; }
+.help { padding: 12px 16px; font-size: 15px; display: grid; gap: 6px; }
+.help p { margin: 0; }
+pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; color: var(--muted); max-height: 320px; overflow: auto; }
+.ver { text-align: center; font-size: 13px; color: var(--muted); }
+/* v5.1：清單裡可以點的一列（其他方式、我是誰、分享）、檔案列 */
+.row-link { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: transparent; border: 0; color: var(--fg); font: inherit; padding: 12px 16px; min-height: 56px; cursor: pointer; }
+.row-link:active { background: var(--fill); }
+.row-link .grow, .item .grow { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+.row-link small, .item .grow small { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.item .grow small.ng { color: var(--red); } .item .grow small.warn { color: var(--orange); }
+.row-link .chev { color: var(--muted); width: 18px; height: 18px; }
+.row-link .ck { color: var(--blue); visibility: hidden; } .row-link.sel .ck { visibility: visible; }
+.other-ways { margin-top: 20px; }
+.icon-btn.sm { width: 36px; height: 36px; } .icon-btn.sm .ico { width: 18px; height: 18px; } .icon-btn.sm:disabled { color: var(--sep); cursor: default; }
+.foot-note.warn { color: var(--orange); }
+#fileProg .s { font-size: 14px; font-weight: 600; white-space: nowrap; }
+#fileManual input { background: transparent; padding: 4px 0; border-radius: 0; }
+
+/* 從下方出來的畫面（臨時會議、切換會議、結束確認） */
+.sheet { position: fixed; inset: 0; z-index: 20; background: var(--dim); display: flex; align-items: flex-end; justify-content: center; }
+.sheet > .panel { width: min(560px, 100%); max-height: calc(100vh - 40px - env(safe-area-inset-top)); overflow-y: auto; background: var(--bg);
+  border-radius: 14px 14px 0 0; padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); display: grid; gap: 12px; }
+.sheet > .panel > * { min-width: 0; }
+.panel-head { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.panel-head h2 { margin: 0 auto 0 0; font-size: 20px; font-weight: 700; }
+.chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+.chips button { flex: 0 0 auto; font: inherit; font-size: 15px; border: 0; border-radius: 999px; padding: 7px 14px; background: var(--card); color: var(--fg); cursor: pointer; }
+.chips button.on { background: var(--blue); color: var(--on); }
+.members { max-height: 40vh; overflow-y: auto; }
+.mem { display: flex; align-items: center; gap: 12px; padding: 11px 16px; font-size: 17px; color: var(--fg); cursor: pointer; }
+.mem input { width: 22px; height: 22px; flex: 0 0 auto; accent-color: var(--blue); margin: 0; }
+.mem .nm { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.mem small { flex: 0 1 auto; color: var(--muted); font-size: 14px; text-align: right; }
+.hrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 15px; padding: 0 4px; }
+/* 動作選單（結束會議確認） */
+.sheet > .panel.action { background: transparent; gap: 8px; padding-top: 0; }
+.action .group { background: var(--card); border-radius: 14px; overflow: hidden; }
+.action .group > * + * { border-top: 1px solid var(--sep); }
+.action .t { padding: 14px 16px; font-size: 13px; color: var(--muted); text-align: center; }
+.action button { display: block; width: 100%; min-height: 56px; font: inherit; font-size: 19px; border: 0; background: var(--card); color: var(--blue); cursor: pointer; }
+.action button.red { color: var(--red); }
+.action button.bold { font-weight: 600; }
+
+.toast { position: fixed; left: 16px; right: 16px; top: calc(10px + env(safe-area-inset-top)); max-width: 420px; margin: 0 auto; z-index: 30;
+  background: var(--card); color: var(--fg); border-radius: 14px; padding: 12px 16px; text-align: center; font-size: 15px; font-weight: 600;
+  box-shadow: 0 6px 24px rgb(0 0 0 / .18); display: flex; align-items: center; justify-content: center; gap: 8px; }
+.toast::before { content: ""; width: 8px; height: 8px; border-radius: 4px; background: var(--green); }
 </style>
+<script>try { var t = localStorage.getItem("mv_theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="i-done" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="16.5 8.5 10.5 15 7.5 12"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="7.5" x2="12" y2="12.5"/><line x1="12" y1="16.5" x2="12.01" y2="16.5"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="8 11.5 12 7.5 16 11.5"/><line x1="12" y1="7.5" x2="12" y2="16.5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></symbol>
+</svg>
 <div class="toast" id="toast" role="status" hidden></div>
-<div class="app">
-  <header>
+
+<!-- A. 第一次設定（還沒有部署網址、也不是假上傳時） -->
+<section class="screen" id="setupScr" hidden>
+  <div class="wrap body">
+    <div class="nav"></div>
+    <h1>設定</h1>
     <div>
-      <h1>Meeting View 錄音</h1>
-      <div class="ver" id="ver"></div>
-    </div>
-    <button class="gear small" id="btnGear" aria-label="設定">⚙️</button>
-  </header>
-
-  <div class="banner warn row" id="endBanner" hidden>
-    <span id="endText"></span>
-    <div class="bbtns">
-      <button class="small stop" id="btnEndB">結束會議</button>
-      <button class="small" id="btnExtend">延長 15 分鐘</button>
-      <button class="small primary" id="btnSwitchB" hidden></button>
+      <div class="list">
+        <label class="field" id="setupUrlRow">部署網址<input type="url" id="setupUrl" autocomplete="off" spellcheck="false" placeholder="貼上 Apps Script 的部署網址"></label>
+        <div class="field keyrow" id="setupKeyRow"><label class="field" style="padding:0;flex:1">上傳 key<input type="password" id="setupKey" autocomplete="off" spellcheck="false"></label>
+          <button class="icon-btn" type="button" id="setupEye" aria-label="顯示 key"><svg class="ico"><use href="#i-eye"/></svg></button></div>
+        <button class="row-link" type="button" id="setupMeBtn"><span class="grow"><b>我是誰</b><small><span id="setupMeText">請選擇</span></small></span><svg class="ico chev"><use href="#i-chevron"/></svg></button>
+      </div>
+      <p class="msg ng" id="setupMsg" style="margin-top:8px"></p>
+      <p class="foot-note" id="setupLinkNote" hidden>已從設定連結帶入網址和 key，只要選「我是誰」。</p>
+      <p class="foot-note">每支手機、每個瀏覽器只要設定一次。</p>
+      <p class="foot-note" id="setupFmt"></p>
     </div>
   </div>
-  <div class="banner ng row" id="autoEndBanner" hidden>
-    <span id="autoEndText"></span>
-    <button class="x" id="btnAutoEndX" aria-label="關閉">✕</button>
-  </div>
-  <div class="banner ng" id="memBanner" hidden>❌ 手機暫存不能用，錄音會直接下載到手機</div>
-  <div class="banner ng row" id="rejectBanner" hidden>
-    <span id="rejectText"></span>
-    <button class="small" id="btnRejectGear">⚙️ 檢查設定</button>
-    <button class="x" id="btnRejectX" aria-label="關閉">✕</button>
-  </div>
-  <div class="banner ng row" id="failBanner" hidden>
-    <span id="failText"></span>
-    <button class="x" id="btnFailX" aria-label="關閉">✕</button>
-  </div>
-  <div class="banner warn row" id="leftBanner" hidden>
-    <span id="leftText"></span>
-    <button class="small" id="btnLeftRetry">全部重送</button>
-  </div>
-  <div class="banner warn row" id="persistBanner" hidden>
-    <span>⚠ 瀏覽器可能清掉暫存，請盡快上傳</span>
-    <button class="x" id="btnPersistX" aria-label="關閉">✕</button>
-  </div>
-  <div class="banner warn" id="spaceBanner" hidden></div>
-  <div class="banner warn" id="fakeBanner" hidden>假上傳模式：不會真的上傳，會議是範例資料</div>
-  <div class="banner ng" id="setupBanner" hidden>還沒設定上傳網址 → 按右上角 ⚙️</div>
-  <div class="banner warn" id="webmBanner" hidden>這台手機只能錄 webm：Studio 能不能讀 webm 需要查證</div>
-  <div class="banner warn" id="wakeBanner" hidden>這個瀏覽器不能保持螢幕常亮：請手動關閉自動鎖定</div>
-  <div class="card notes" id="notes">
-    <span id="noteLine">請用 Safari 或 Chrome 開，不要從 LINE 開</span>
-    <span>錄音時不要戴耳機</span>
-    <span>錄音中不要切 App、不要鎖螢幕</span>
-  </div>
+  <div class="bar"><div class="wrap"><button class="btn primary" id="btnSetupSave">測試並儲存</button></div></div>
+</section>
 
-  <section class="card" id="graceCard" hidden>
-    <div class="banner warn" id="graceText"></div>
-    <div class="btns"><button class="primary small" id="btnGraceResume">↩ 繼續錄這場</button></div>
-  </section>
-
-  <section class="card" id="startCard">
-    <div class="hrow"><h2>今天的會議</h2><button class="small" id="btnEvRefresh" aria-label="重新讀取行事曆">🔄</button></div>
-    <div class="evlist" id="evList"></div>
-    <div class="msg" id="evMsg"></div>
-    <details id="evEnded" hidden><summary id="evEndedSum"></summary><div class="evlist" id="evEndedList"></div></details>
-    <label style="margin-top:8px">會議名稱（可以改）
-      <input type="text" id="meetingName" maxlength="60" autocomplete="off" placeholder="先選上面的會議">
-    </label>
-    <div class="msg ng" id="manualNote" hidden>讀不到行事曆、也建不了日曆活動：可以直接輸入名稱開始（這場沒有對應日曆活動）</div>
-    <div class="btns two">
-      <button class="primary" id="btnStart" disabled>開始錄音</button>
-      <button id="btnQuick">⚡ 臨時會議</button>
+<!-- B. 今天的會議 -->
+<section class="screen" id="startCard">
+  <div class="wrap body">
+    <div class="nav">
+      <span class="left"><span class="sample" id="fakeBanner" hidden>範例資料・假上傳</span></span>
+      <button class="icon-btn" type="button" id="btnEvRefresh" aria-label="重新讀取行事曆"><svg class="ico"><use href="#i-refresh"/></svg></button>
+      <button class="icon-btn" type="button" id="btnGear" aria-label="設定"><svg class="ico"><use href="#i-gear"/></svg></button>
     </div>
-    <div class="msg ng" id="startMsg"></div>
-  </section>
-
-  <section class="card" id="recCard" hidden>
-    <div class="banner warn row" id="undoBar" hidden style="margin-bottom:10px">
-      <span id="undoText"></span>
-      <button class="small" id="btnUndo">↩ 復原切換</button>
+    <h1>今天的會議</h1>
+    <div id="stripSlotStart"></div>
+    <div class="list help" id="tipsCard" hidden>
+      <p><b>開始前</b></p>
+      <p>用 Safari 或 Chrome 開，不要從 LINE 開；錄音時不要戴耳機；錄音中不要切 App、不要鎖螢幕。</p>
+      <div><button class="btn small primary" id="btnTipsOk">知道了</button></div>
     </div>
-    <h2 id="recTitle">錄音中</h2>
+    <div id="evMineWrap" hidden><p class="cap">我的會議</p><div class="list" id="evMine"></div></div>
+    <div>
+      <p class="cap" id="evOtherCap" hidden>其他會議</p>
+      <div class="list" id="evList"></div>
+      <p class="msg" id="evMsg"></p>
+      <details class="more" id="evEnded" hidden><summary id="evEndedSum"></summary><div class="list" id="evEndedList"></div></details>
+    </div>
+    <div>
+      <p class="cap">會議名稱（可以改）</p>
+      <div class="list"><div class="item"><input type="text" id="meetingName" maxlength="60" autocomplete="off" placeholder="先選上面的會議"></div></div>
+      <p class="msg ng" id="manualNote" hidden>讀不到行事曆、也建不了日曆活動：可以直接輸入名稱開始（這場沒有對應日曆活動）</p>
+    </div>
+    <div class="other-ways">
+      <p class="cap">其他方式</p>
+      <div class="list">
+        <button class="row-link" type="button" id="btnQuick"><span class="grow"><b>臨時會議</b><small>沒有在日曆上的會議</small></span><svg class="ico chev"><use href="#i-chevron"/></svg></button>
+        <button class="row-link" type="button" id="btnFile"><span class="grow"><b>上傳錄音檔</b><small>用別的 App 錄好的檔</small></span><svg class="ico chev"><use href="#i-chevron"/></svg></button>
+      </div>
+    </div>
+    <p class="msg ng" id="startMsg"></p>
+    <div class="list" id="upSlotStart"></div>
+  </div>
+  <div class="bar"><div class="wrap">
+    <button class="btn primary" id="btnStart" disabled>開始錄音</button>
+  </div></div>
+</section>
+
+<!-- C. 錄音中 -->
+<section class="screen" id="recCard" hidden>
+  <div class="wrap body">
+    <div class="nav"><span class="left"><span class="sample" id="fakeBanner2" hidden>範例資料・假上傳</span></span>
+      <button class="icon-btn" type="button" id="btnGear2" aria-label="設定"><svg class="ico"><use href="#i-gear"/></svg></button></div>
+    <div id="stripSlotRec"></div>
+    <div class="strips">
+      <div class="strip" id="endBanner" hidden><span id="endText"></span>
+        <div class="bbtns">
+          <button class="btn small danger" id="btnEndB">結束會議</button>
+          <button class="btn small" id="btnExtend">延長 15 分鐘</button>
+          <button class="btn small primary" id="btnSwitchB" hidden></button>
+        </div></div>
+      <div class="strip info" id="undoBar" hidden><span id="undoText"></span><button class="btn small" id="btnUndo">復原切換</button></div>
+      <div class="strip ng" id="stoppedBanner" hidden><span>錄音停了（可能切過 App 或鎖過螢幕）</span><button class="btn small primary" id="btnResume">繼續錄音</button></div>
+      <div class="strip" id="lowBanner" hidden><span>太小聲，手機靠近一點</span></div>
+      <div class="strip" id="wakeBanner" hidden><span>這個瀏覽器不能保持螢幕常亮：請手動關閉自動鎖定</span></div>
+    </div>
+    <div class="rec-head">
+      <div class="rec-dot">錄音中</div>
+      <div id="recTitle"></div>
+      <div class="small-muted" id="eventMsg" hidden></div>
+      <div class="small-muted warn" id="eventWarn" hidden></div>
+    </div>
     <div class="timer mono" id="elapsed">00:00:00</div>
-    <div class="sub" id="segInfo">第 1 段</div>
-    <div class="sub" id="eventMsg" hidden></div>
-    <div class="sub warn" id="eventWarn" hidden></div>
     <div class="meter" aria-label="音量"><div id="level"></div></div>
-    <div class="db mono" id="dbText">平均 -∞ dBFS</div>
-    <div class="banner warn" id="lowBanner" hidden style="margin-top:10px">太小聲，手機靠近一點</div>
-    <div class="banner ng" id="stoppedBanner" hidden style="margin-top:10px">
-      錄音停了（可能切過 App 或鎖過螢幕）
-      <div class="btns"><button class="primary small" id="btnResume">繼續錄音（接下一段）</button></div>
+    <div class="small-muted" id="segInfo">第 1 段</div>
+    <div class="small-muted mono" id="dbText" hidden>平均 -∞ dBFS</div>
+    <div id="nextBox" hidden>
+      <p class="cap">下一場</p>
+      <div class="list"><div class="item"><span class="grow" id="nextText"></span><button class="btn small primary" id="btnSwitchNext">切換到這場</button></div></div>
     </div>
-    <div class="btns"><button class="stop" id="btnEnd">結束會議</button></div>
-    <div class="next" id="nextBox" hidden>
-      <div class="sub" style="text-align:left">下一場</div>
-      <div class="ti" id="nextText"></div>
-      <button class="primary small" id="btnSwitchNext">切換到這場</button>
-    </div>
-    <div class="btns two">
-      <button class="small" id="btnOther">選其他會議</button>
-      <button class="small" id="btnQuick2">⚡ 臨時會議</button>
-    </div>
-  </section>
+  </div>
+  <div class="bar"><div class="wrap">
+    <button class="btn danger" id="btnEnd">結束會議</button>
+    <div class="row-btns"><button class="text-btn" id="btnOther">選其他會議</button></div>
+  </div></div>
+</section>
 
-  <section class="card" id="upCard" hidden>
-    <h2>上傳</h2>
-    <ul class="uploads" id="uploads"></ul>
-    <div class="summary" id="upSummary"></div>
-    <div class="btns two">
-      <button class="small" id="btnRetry" hidden>全部重送</button>
-      <button class="small" id="btnDlAll" hidden>全部下載到手機</button>
+<!-- D. 完成 -->
+<section class="screen" id="doneCard" hidden>
+  <div class="wrap body">
+    <div class="nav"><span class="left"><span class="sample" id="fakeBanner3" hidden>範例資料・假上傳</span></span></div>
+    <div id="stripSlotDone"></div>
+    <div class="done-head" id="doneHead">
+      <svg class="ico hero" id="doneIco"><use href="#i-upload"/></svg>
+      <div id="doneTitle">上傳中</div>
+      <div class="summary" id="upSummary"></div>
+      <div class="summary" id="doneNote">約 20–30 分鐘後，會議記錄會出現在「硬體組會議記錄2026」</div>
     </div>
-  </section>
+    <div class="center" id="graceCard" hidden>
+      <div class="small-muted" id="graceText"></div>
+      <button class="text-btn" id="btnGraceResume">繼續錄這場</button>
+    </div>
+    <div class="list" id="upSlotDone"></div>
+  </div>
+  <div class="bar"><div class="wrap"><button class="btn primary" id="btnHome">回到首頁</button></div></div>
+</section>
 
-  <section class="card">
-    <h2>紀錄</h2>
-    <pre class="mono" id="log"></pre>
-  </section>
+<!-- 共用狀態列：跟著目前的畫面搬位置 -->
+<div class="strips" id="strips">
+  <div class="strip ng" id="lineBanner" hidden><span>現在是從 LINE 開的：請改用 Safari 或 Chrome 開這個網址</span></div>
+  <div class="strip ng" id="memBanner" hidden><span>手機暫存不能用，錄音會直接下載到手機</span></div>
+  <div class="strip ng" id="rejectBanner" hidden><span id="rejectText"></span>
+        <button class="btn small" id="btnRejectGear">檢查設定</button>
+        <button class="icon-btn x" id="btnRejectX" aria-label="關閉"><svg class="ico"><use href="#i-x"/></svg></button></div>
+  <div class="strip ng" id="failBanner" hidden><span id="failText"></span>
+        <button class="icon-btn x" id="btnFailX" aria-label="關閉"><svg class="ico"><use href="#i-x"/></svg></button></div>
+  <div class="strip" id="leftBanner" hidden><span id="leftText"></span><button class="btn small" id="btnLeftRetry">全部重送</button></div>
+  <div class="strip" id="spaceBanner" hidden></div>
+  <div class="strip info" id="meBanner" hidden><span>還沒設定「我是誰」：選了之後，你參加的會議會排在最前面</span><button class="btn small" id="btnMeBanner">選一下</button></div>
+  <div class="strip ok" id="autoEndBanner" hidden><span id="autoEndText"></span>
+        <button class="icon-btn x" id="btnAutoEndX" aria-label="關閉"><svg class="ico"><use href="#i-x"/></svg></button></div>
 </div>
 
-<div class="sheet" id="sheet" hidden>
-  <div class="card">
-    <h2>設定</h2>
-    <label>Apps Script 部署網址
-      <input type="url" id="cfgUrl" autocomplete="off" spellcheck="false">
-    </label>
-    <label>上傳 key
-      <input type="password" id="cfgKey" autocomplete="off" spellcheck="false">
-    </label>
-    <label class="check"><input type="checkbox" id="cfgFake">假上傳（不打 API，測畫面用）</label>
-    <div class="msg" id="cfgMsg"></div>
-    <div class="btns two">
-      <button class="small" id="btnPing">測試連線</button>
-      <button class="small primary" id="btnSave">儲存</button>
-    </div>
-    <button class="small" id="btnClose">關閉</button>
+<!-- 上傳清單：有檔案還沒上傳時才出現，跟著目前的畫面搬位置 -->
+<div id="upCard" hidden>
+  <ul class="uploads" id="uploads"></ul>
+  <div class="row-btns" style="padding:4px 16px 12px">
+    <button class="btn small" id="btnRetry" hidden>全部重送</button>
+    <button class="btn small" id="btnDlAll" hidden>全部下載到手機</button>
   </div>
 </div>
+
+<!-- 設定 -->
+<section class="screen" id="sheet" hidden>
+  <div class="wrap body">
+    <div class="nav"><button class="text-btn" id="btnClose" style="font-weight:600">完成</button></div>
+    <h1>設定</h1>
+    <div>
+      <p class="cap">連線</p>
+      <div class="list">
+        <button class="row-link" type="button" id="cfgMeBtn"><span class="grow"><b>我是誰</b><small>目前身分：<span id="cfgMeText">還沒選</span></small></span><svg class="ico chev"><use href="#i-chevron"/></svg></button>
+        <label class="field">部署網址<input type="url" id="cfgUrl" autocomplete="off" spellcheck="false"></label>
+        <div class="field keyrow"><label class="field" style="padding:0;flex:1">上傳 key<input type="password" id="cfgKey" autocomplete="off" spellcheck="false"></label>
+          <button class="icon-btn" type="button" id="cfgEye" aria-label="顯示 key"><svg class="ico"><use href="#i-eye"/></svg></button></div>
+        <div class="item"><button class="btn small primary" id="btnSave">測試並儲存</button><span class="msg" id="cfgMsg" style="padding:0"></span></div>
+        <label class="switch"><span>假上傳（不打 API，測畫面用）</span><input type="checkbox" id="cfgFake"></label>
+        <button class="row-link" type="button" id="btnShare"><span class="grow"><b>分享給同事</b><small>產生設定連結，同事只要選「我是誰」</small></span><svg class="ico chev"><use href="#i-chevron"/></svg></button>
+      </div>
+    </div>
+    <div>
+      <p class="cap">外觀</p>
+      <div class="list"><div class="seg" id="themeSeg" role="group" aria-label="外觀">
+        <button type="button" data-theme="auto">自動</button><button type="button" data-theme="light">亮色</button><button type="button" data-theme="dark">暗色</button>
+      </div></div>
+    </div>
+    <div>
+      <p class="cap">說明</p>
+      <div class="list help">
+        <p>用 Safari 或 Chrome 開，不要從 LINE 開。</p>
+        <p>錄音時不要戴耳機；錄音中不要切 App、不要鎖螢幕。</p>
+        <p>每 20 分鐘存一段，先存在手機，上傳成功才刪。網路斷了會自動再試。</p>
+        <p>加到主畫面，用起來像 App：Safari 按「分享」→「加入主畫面」；Chrome 按選單 →「加到主畫面」。加到主畫面後，要在那裡重新設定一次。</p>
+        <p id="persistNote" hidden>這個瀏覽器沒有允許持久儲存：手機空間不夠時可能清掉暫存，錄完請盡快上傳。</p>
+        <p id="webmBanner" hidden>這台手機只能錄 webm：Studio 能不能讀 webm 需要查證。</p>
+      </div>
+    </div>
+    <details class="more">
+      <summary>診斷資訊</summary>
+      <div class="list"><p class="help" id="diagInfo" style="font-size:13px;color:var(--muted)"></p><pre class="mono" id="log"></pre></div>
+    </details>
+    <div class="ver" id="ver"></div>
+  </div>
+</section>
 
 <div class="sheet" id="evSheet" hidden>
-  <div class="card tall">
-    <div class="hrow"><h2>切換到其他會議</h2><button class="small" id="btnEvRefresh2" aria-label="重新讀取行事曆">🔄</button></div>
-    <div class="msg" id="evSheetMsg"></div>
-    <div class="evlist" id="evSheetList"></div>
-    <button class="small" id="btnEvSheetClose">取消</button>
+  <div class="panel">
+    <div class="panel-head"><h2>切換到其他會議</h2>
+      <button class="icon-btn" type="button" id="btnEvRefresh2" aria-label="重新讀取行事曆"><svg class="ico"><use href="#i-refresh"/></svg></button>
+      <button class="text-btn" id="btnEvSheetClose">取消</button></div>
+    <p class="msg" id="evSheetMsg"></p>
+    <div class="list" id="evSheetList"></div>
+    <div class="list"><button class="row-link" type="button" id="btnQuick2"><span class="grow"><b>臨時會議</b><small>沒有在日曆上的會議</small></span><svg class="ico chev"><use href="#i-chevron"/></svg></button></div>
   </div>
 </div>
 
 <div class="sheet" id="quickSheet" hidden>
-  <div class="card tall">
-    <h2>⚡ 臨時會議</h2>
-    <label>會議名稱（必填）
-      <input type="text" id="qName" maxlength="60" autocomplete="off" placeholder="例如：SUT 討論">
-    </label>
+  <div class="panel">
+    <div class="panel-head"><button class="text-btn" id="qCancel">取消</button><h2 style="margin:0 auto">臨時會議</h2><span style="width:52px"></span></div>
+    <div class="list"><div class="item"><input type="text" id="qName" maxlength="60" autocomplete="off" placeholder="會議名稱（必填），例如：SUT 討論"></div></div>
     <div class="hrow"><span>與會人員</span><span class="warn" id="qCount">已選 0 人</span></div>
     <input type="search" id="qSearch" placeholder="搜尋姓名、部門、組" autocomplete="off">
     <div class="chips" id="qDepts"></div>
     <div class="chips" id="qUnits" hidden></div>
-    <div class="msg" id="qMsg"></div>
-    <div class="members" id="qList"></div>
-    <div class="btns">
-      <button class="primary" id="qStart">開始（已選 0 人）</button>
-      <button class="small" id="qNoPick">不選人直接開始</button>
-      <button class="small" id="qCancel">取消</button>
+    <p class="msg" id="qMsg"></p>
+    <div class="list members" id="qList"></div>
+    <p class="msg ng" id="qErr"></p>
+    <button class="btn primary" id="qStart">開始（已選 0 人）</button>
+    <button class="text-btn" id="qNoPick">不選人直接開始</button>
+  </div>
+</div>
+
+<div class="sheet action" id="endSheet" hidden>
+  <div class="panel action">
+    <div class="group"><div class="t" id="endSheetText">結束這場會議？錄音會全部上傳</div>
+      <button class="red bold" id="btnEndConfirm">結束並上傳</button></div>
+    <div class="group"><button class="bold" id="btnEndCancel">繼續錄音</button></div>
+  </div>
+</div>
+
+<!-- 上傳錄音檔：選會議 → 選檔案 → 確認上傳（一個畫面一件事） -->
+<section class="screen" id="fileScr" hidden>
+  <div class="wrap body">
+    <div class="nav"><button class="text-btn" id="fileBack" style="margin-right:auto">取消</button>
+      <span class="sample" id="fakeBanner4" hidden>範例資料・假上傳</span></div>
+    <h1 id="fileTitle">選會議</h1>
+    <div id="fileStep1">
+      <div class="chips" id="fileDates"></div>
+      <p class="msg" id="fileEvMsg" style="margin-top:10px"></p>
+      <div class="list" id="fileEvList" style="margin-top:10px"></div>
+      <div class="list" style="margin-top:16px">
+        <button class="row-link" type="button" id="fileManualBtn"><span class="grow"><b>沒有在日曆上</b><small>輸入會議名稱、日期、開始時間</small></span><svg class="ico ck"><use href="#i-check"/></svg></button>
+        <div id="fileManual" hidden>
+          <label class="field">會議名稱<input type="text" id="fileMName" maxlength="60" autocomplete="off"></label>
+          <label class="field">日期<input type="date" id="fileMDate"></label>
+          <label class="field">開始時間<input type="time" id="fileMTime"></label>
+        </div>
+      </div>
     </div>
-    <div class="msg ng" id="qErr"></div>
+    <div id="fileStep2" hidden>
+      <p class="small-muted" id="fileFor" style="text-align:left"></p>
+      <input type="file" id="fileInput" accept="audio/*,.m4a,.mp3,.wav,.aac" multiple hidden>
+      <button class="btn plain" type="button" id="btnPickFiles">選擇錄音檔</button>
+      <p class="foot-note">m4a、mp3、wav、aac；可以選好幾個，順序就是段號（_01、_02…），可以上下調整。</p>
+      <div class="list" id="fileList" style="margin-top:12px"></div>
+      <p class="msg" id="fileMsg" style="margin-top:8px"></p>
+    </div>
+    <div id="fileStep3" hidden>
+      <div class="list help" id="fileSummary"></div>
+      <div class="done-head" id="fileDone" hidden>
+        <svg class="ico hero" id="fileDoneIco"><use href="#i-done"/></svg>
+        <div id="fileDoneTitle"></div>
+        <div class="summary" id="fileDoneNote"></div>
+      </div>
+      <div class="list" id="fileProg" style="margin-top:12px"></div>
+      <p class="msg" id="fileUpMsg" style="margin-top:8px"></p>
+    </div>
+  </div>
+  <div class="bar"><div class="wrap"><button class="btn primary" id="fileNext" disabled>下一步</button></div></div>
+</section>
+
+<!-- 我是誰：部門 → 組 → 人 -->
+<div class="sheet" id="meSheet" hidden>
+  <div class="panel">
+    <div class="panel-head"><button class="text-btn" id="meCancel">取消</button><h2 style="margin:0 auto">我是誰</h2><span style="width:52px"></span></div>
+    <input type="search" id="meSearch" placeholder="搜尋姓名、部門、組" autocomplete="off">
+    <div class="chips" id="meDepts"></div>
+    <div class="chips" id="meUnits" hidden></div>
+    <p class="msg" id="meMsg"></p>
+    <div class="list members" id="meList"></div>
+  </div>
+</div>
+
+<!-- 分享給同事：設定連結 -->
+<div class="sheet" id="shareSheet" hidden>
+  <div class="panel">
+    <div class="panel-head"><h2>分享給同事</h2><button class="text-btn" id="shareClose" style="font-weight:600">完成</button></div>
+    <p style="margin:0 4px;font-size:15px">同事用這條連結打開，網址和 key 會自動填好，只要選「我是誰」。</p>
+    <div class="list"><div class="item"><input type="text" id="shareLink" readonly></div></div>
+    <button class="btn primary" id="btnCopyLink">複製連結</button>
+    <p class="msg" id="shareMsg"></p>
+    <div class="strip"><span>連結裡含有上傳 key，只傳給硬體組；外流時請 Jacky 換 key。</span></div>
+  </div>
+</div>
+
+<!-- 臨時會議送出前確認 -->
+<div class="sheet action" id="quickConfirm" hidden>
+  <div class="panel action">
+    <div class="group">
+      <div class="t"><b id="qcTitle" style="color:var(--fg);font-size:15px"></b><br><span id="qcText"></span><span id="qcSwitch" style="display:block;margin-top:4px" hidden></span></div>
+      <button class="bold" id="btnQConfirm">建立並開始錄音</button></div>
+    <div class="group"><button id="btnQBack">返回修改</button></div>
   </div>
 </div>
 
 <script>
 (function () {
   "use strict";
-  const VERSION = "record v4（10/20）";
+  const VERSION = "record v5.1（10/21）";
   const $ = (id) => document.getElementById(id);
   const pad = (n) => String(n).padStart(2, "0");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -306,18 +561,26 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     if (text !== undefined) e.textContent = text;
     return e;
   }
+  // 線條圖示（上面 <svg> 裡的 symbol）
+  function svgIcon(id, cls) {
+    const box = el("span");
+    box.innerHTML = '<svg class="' + (cls || "ico") + '" aria-hidden="true"><use href="#' + id + '"/></svg>';
+    return box.firstChild;
+  }
 
   // ---------- 設定（localStorage 可能被擋，一律 try/catch）----------
   function lsGet(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
   function lsJson(k, def) { try { return JSON.parse(lsGet(k)) || def; } catch (e) { return def; } }
+  let cfgOverride = null; // 測試並儲存：先用輸入的網址和 key 測試，成功才存
   const cfg = {
-    url: () => lsGet("mv_api_url").trim(),
-    key: () => lsGet("mv_upload_key").trim(),
-    // 假上傳（測試用）：網址 ?fake=…（每次重新讀，測試中可以換模式）或 ⚙️ 的開關；模式見 fakeFetch()
+    url: () => (cfgOverride ? cfgOverride.url : lsGet("mv_api_url").trim()),
+    key: () => (cfgOverride ? cfgOverride.key : lsGet("mv_upload_key").trim()),
+    me: () => lsGet("mv_me_id").trim(), // 我是誰（成員名單的 id），v5.1
+    // 假上傳（測試用）：網址 ?fake=…（每次重新讀，測試中可以換模式）或設定頁的開關；模式見 fakeFetch()
     fake: () => new URLSearchParams(location.search).get("fake") || (lsGet("mv_fake_upload") === "1" ? "1" : "")
   };
-  const SEG_MS = (num("seg") || 1200) * 1000;         // ?seg=秒數：測試用，縮短每段長度
+  const SEG_MS = (num("seg") || 1200) * 1000;          // ?seg=秒數：測試用，縮短每段長度
   const TIMEOUT_S = num("timeout");                   // ?timeout=秒數：測試用，縮短逾時
   const AUTORETRY_MS = (num("autoretry") || 120) * 1000; // ?autoretry=秒數：測試用，縮短自動再試間隔
   const GRACE_MS = (num("grace") || 120) * 1000;      // 結束後可以復原的時間（?grace=秒數）
@@ -330,7 +593,8 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   const RETRY_WAIT = [2, 5, 10];   // 上傳：失敗後等幾秒再試（共 3 次）
   const EVENT_RETRY_WAIT = [2, 5]; // 建日曆、讀行事曆、讀名單：再試 2 次
   const LOW_SPACE_MB = 200;        // 1 小時約 30 MB（推算）
-  const GAIN = Math.min(Math.max(num("gain") || 64, 16), 128);  // 10/21 Jacky：要更大聲，預設 48→64；?gain= 可試 16–128
+  const GAIN_Q = num("gain");                         // ?gain=倍數：錄音放大倍數（16–128，超出範圍夾回）
+  const GAIN = Math.min(Math.max(GAIN_Q || 64, 16), 128); // 預設 64（10/21 Jacky：1 公尺外講話要更大聲；和已發佈的 v4 一致）
   const BITRATE = 64000;
 
   // ---------- 紀錄 ----------
@@ -381,7 +645,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
       catch (e) {
         useMem = true;
         $("memBanner").hidden = false;
-        log("❌ 手機暫存不能用（" + e.name + "）：每段錄完會直接下載到手機");
+        log("手機暫存不能用（" + e.name + "）：每段錄完會直接下載到手機");
       }
     }
     return memFn();
@@ -397,7 +661,11 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   //   上傳／完成檔／測試連線：1 成功｜fail2 前 2 次連線失敗｜fail 一直連線失敗｜doget 回 doGet 的結果
   //                          empty 空白回應｜reject 後端拒絕（key 不正確）｜slow 一直不回（等逾時）
   //   其他 API 預設成功，另外指定：events-…（讀行事曆）、members-…（讀名單）、event-…（建日曆）
-  //   events-empty 今天沒有會議｜event-unknown 回 unknownIds｜假會議的時間以開頁為準，?fakeend=秒數 讓進行中那場提早結束
+  //   events-empty 今天沒有會議｜event-unknown 回 unknownIds｜event-live 回 invited＝勾選人數｜event-exp 回 invited 0（實驗模式）
+  //   event-added 回 added＝勾選人數、invited 0（v0.6.2 正式模式）｜event-noadd 回 added 0、invited 0（v0.6.2 實驗模式）
+  //   todayEvents 帶 memberId → 進行中、稍後、已結束三場標 mine（我的會議）；帶 date → 那天的範例會議（只收今天和前 7 天）
+  //   dup01（v5.1 上傳錄音檔）：_01 的上傳回 duplicate:true
+  //   沒指定 event-live／exp／added／noadd 時 createEvent 不回 invited、added（模擬 v0.6.1 以前的後端）｜假會議的時間以開頁為準，?fakeend=秒數 讓進行中那場提早結束
   const FAKE_BASE = ["1", "fail2", "fail", "doget", "empty", "reject", "slow"];
   const FAKE_KIND = { todayEvents: "events", members: "members", createEvent: "event" };
   function fakeMode(action) {
@@ -409,16 +677,22 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     return FAKE_KIND[action] ? (m[FAKE_KIND[action]] || "1") : m.base;
   }
   const FAKE_T0 = Date.now(), FAKE_END = num("fakeend");
-  function fakeEvents() {
+  const FAKE_MINE = ["fake-ev-now", "fake-ev-later", "fake-ev-ended"];
+  const fakeDays = (date) => Math.round((Date.parse(today() + "T12:00:00") - Date.parse(date + "T12:00:00")) / 86400000);
+  // date：前幾天的範例會議＝今天的範例整天往前移（id 加 fake-dN-）
+  function fakeEvents(date) {
+    const n = date ? fakeDays(date) : 0;
+    if (n) return fakeEvents().map((e) => Object.assign({}, e, { id: e.id.replace(/^fake-/, "fake-d" + n + "-"),
+      start: new Date(Date.parse(e.start) - n * 1440 * MIN).toISOString(), end: new Date(Date.parse(e.end) - n * 1440 * MIN).toISOString() }));
     const iso = (t) => new Date(t).toISOString();
     const curEnd = FAKE_END ? FAKE_T0 + FAKE_END * 1000 : FAKE_T0 + 40 * MIN;
     const nextStart = FAKE_END ? curEnd + 5 * MIN : FAKE_T0 + 20 * MIN;
     return [
-      { id: "fake-ev-ended", title: "範例：晨會", start: iso(FAKE_T0 - 120 * MIN), end: iso(FAKE_T0 - 60 * MIN) },
-      { id: "fake-ev-now", title: "範例：SUT 週會", start: iso(FAKE_T0 - 20 * MIN), end: iso(curEnd) },
-      { id: "fake-ev-next", title: "範例：硬體設計審查", start: iso(nextStart), end: iso(nextStart + 60 * MIN) },
+      { id: "fake-ev-ended", title: "範例：晨會", start: iso(FAKE_T0 - 120 * MIN), end: iso(FAKE_T0 - 60 * MIN), guests: 3 },
+      { id: "fake-ev-now", title: "範例：SUT 週會", start: iso(FAKE_T0 - 20 * MIN), end: iso(curEnd), guests: 6 },
+      { id: "fake-ev-next", title: "範例：硬體設計審查", start: iso(nextStart), end: iso(nextStart + 60 * MIN), guests: 4 },
       { id: "fake-ev-later", title: "範例：二〇二六年第四季硬體部跨部門專案進度檢討與下一階段規劃討論（含供應商與外部顧問）",
-        start: iso(FAKE_T0 + 180 * MIN), end: iso(FAKE_T0 + 240 * MIN) }
+        start: iso(FAKE_T0 + 180 * MIN), end: iso(FAKE_T0 + 240 * MIN), guests: 12 }
     ];
   }
   const FAKE_MEMBERS = [
@@ -453,10 +727,21 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
           const unknown = mode === "unknown" ? ids.slice(0, 1) : ids.filter((x) => !FAKE_MEMBERS.some((f) => f.id === x));
           r.eventId = "fake-event-" + String(body.requestId).slice(-6); r.start = new Date().toISOString();
           r.guests = ids.length - unknown.length;
+          if (mode === "live") r.invited = r.guests; else if (mode === "exp") r.invited = 0;
+          else if (mode === "added") { r.invited = 0; r.added = r.guests; } else if (mode === "noadd") { r.invited = 0; r.added = 0; }
           if (unknown.length) r.unknownIds = unknown;
-        } else if (body.action === "todayEvents") { r.events = mode === "empty" ? [] : fakeEvents(); r.now = new Date().toISOString(); }
+        } else if (body.action === "todayEvents") {
+          if (body.date && !(fakeDays(body.date) >= 0 && fakeDays(body.date) <= 7)) return reply(200, { ok: false, error: "只能查今天和前 7 天的會議", action: body.action });
+          r.events = mode === "empty" ? [] : fakeEvents(body.date);
+          if (body.memberId) {
+            r.events.forEach((e) => { e.mine = FAKE_MINE.includes(e.id.replace(/^fake-d\d+-/, "fake-")); });
+            r.events.sort((a, b) => (b.mine - a.mine) || (a.start < b.start ? -1 : 1));
+          }
+          r.now = new Date().toISOString();
+        }
         else if (body.action === "members") r.members = FAKE_MEMBERS;
         else if (body.action !== "ping") r.fileId = "fake";
+        if (body.action === "upload" && /(^|,)dup01(,|$)/.test(cfg.fake()) && /_01\.\w+$/.test(body.name)) r.duplicate = true;
         reply(200, r);
       }, 1000);
     });
@@ -582,9 +867,9 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
 
     if (v.ok) {
       await store.del(rec.name);
-      setRow(rec.name, "✅");
-      log("✅ " + rec.name + (v.r.duplicate ? "（已存在，視為成功）" : ""));
-      if (rec.kind === "segment") toast("✅ " + labels([rec]) + "已上傳");
+      setRow(rec.name, "已上傳");
+      log("上傳成功：" + rec.name + (v.r.duplicate ? "（已存在，視為成功）" : ""));
+      if (rec.kind === "segment") toast(labels([rec]) + "已上傳");
       const m = meetings.get(rec.prefix);
       if (rec.kind === "complete" && m) m.completeSent = true;
       return;
@@ -593,10 +878,10 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     rec.lastError = v.reject || v.fail;
     rec.rejected = !!v.reject;
     await store.put(rec);
-    setRow(rec.name, "❌");
+    setRow(rec.name, "失敗");
     log(v.reject
-      ? "❌ " + rec.name + " 被後端拒絕，不重試（" + VERSION + "：" + v.reject + "）"
-      : "❌ " + rec.name + " 重試 3 次仍失敗，留在手機上，會自動再試（" + VERSION + "：" + v.fail + "）");
+      ? "失敗：" + rec.name + " 被後端拒絕，不重試（" + VERSION + "：" + v.reject + "）"
+      : "失敗：" + rec.name + " 重試 3 次仍失敗，留在手機上，會自動再試（" + VERSION + "：" + v.fail + "）");
   }
 
   // 失敗的改回等待，重新上傳（全部重送、自動再試共用）
@@ -663,7 +948,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     const byName = new Map(recs.map((r) => [r.name, r]));
     // 暫存裡有、但畫面還沒列的（例如上次沒傳完的）補上
     recs.forEach((r) => {
-      if (!rows.has(r.name)) rows.set(r.name, r.status === "failed" ? "❌" : (r.status === "recording" ? "會議中" : "等待"));
+      if (!rows.has(r.name)) rows.set(r.name, r.status === "failed" ? "失敗" : (r.status === "recording" ? "會議中" : "等待"));
     });
     // 依會議分組（連開會議時上一場還在背景上傳）
     const groups = new Map();
@@ -678,7 +963,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
       ul.append(el("li", "grp", (m ? HM(m.t0) + "　" + m.name : p) + (m && m === meeting ? "（錄音中）" : "")));
       list.forEach(([name, st]) => {
         const li = el("li");
-        li.append(el("span", "n mono", name), el("span", "s " + (st === "✅" ? "ok" : st === "❌" ? "ng" : "warn"), st));
+        li.append(el("span", "n mono", name), el("span", "s " + (st === "已上傳" ? "ok" : st === "失敗" ? "ng" : "warn"), st));
         const rec = byName.get(name);
         if (rec && rec.status !== "recording" && name !== sendingName) {
           const acts = el("div", "acts");
@@ -691,7 +976,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
         ul.append(li);
       });
     });
-    $("upCard").hidden = rows.size === 0;
+    $("upCard").hidden = !recs.some((r) => r.status !== "recording"); // 都傳完就不顯示清單
 
     const left = recs.filter((r) => r.status !== "recording");
     leftCount = left.length;
@@ -700,11 +985,11 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     // 失敗橫幅：直到成功或使用者按掉（同一批失敗按掉後不再跳）
     const errs = left.filter((r) => r.lastError && !r.rejected);
     const failKey = errs.map((r) => r.name).join("|");
-    $("failText").textContent = "❌ " + labels(errs) + "上傳失敗，" + (errs.some((r) => r.kind === "segment") ? "錄音" : "") + "還在手機上，會自動再試";
+    $("failText").textContent = labels(errs) + "上傳失敗，" + (errs.some((r) => r.kind === "segment") ? "錄音" : "") + "還在手機上，會自動再試";
     $("failBanner").hidden = !failKey || failKey === failDismissed;
     const rej = left.find((r) => r.rejected);
     const rejKey = rej ? rej.lastError : "";
-    $("rejectText").textContent = "❌ 上傳被拒絕：" + rejKey;
+    $("rejectText").textContent = "上傳被拒絕：" + rejKey;
     $("rejectBanner").hidden = !rejKey || rejKey === rejectDismissed;
     // 上次沒傳完的（不是這次開頁錄的）
     const old = left.filter((r) => !meetings.has(r.prefix)).length;
@@ -715,19 +1000,42 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     let text = "", cls = "", big = false;
     if (pumping && left.length) { text = "上傳中…（還有 " + left.length + " 個）"; cls = "warn"; }
     else if (left.some((r) => r.status === "failed")) {
-      text = segsLeft ? "❌ 有 " + segsLeft + " 段還沒上傳，錄音都還在手機上" : "❌ 完成檔還沒上傳，還在手機上";
+      text = segsLeft ? "有 " + segsLeft + " 段還沒上傳，錄音都還在手機上" : "完成檔還沒上傳，還在手機上";
       cls = "ng"; big = ended;
     }
     else if (left.length) { text = "有 " + left.length + " 個檔案等待上傳"; cls = "warn"; }
     else if (ended && !graceM) {
       const done = Array.from(meetings.values()).filter((m) => m.completeSent);
-      if (done.length === 1) { text = "✅ 全部上傳完成（" + done[0].segments + " 段＋完成檔）"; cls = "ok"; big = true; }
-      else if (done.length > 1) { text = "✅ 全部上傳完成（" + done.length + " 場會議）"; cls = "ok"; big = true; }
+      if (done.length === 1) { text = "全部上傳完成（" + done[0].segments + " 段＋完成檔）"; cls = "ok"; big = true; }
+      else if (done.length > 1) { text = "全部上傳完成（" + done.length + " 場會議）"; cls = "ok"; big = true; }
     }
     $("upSummary").textContent = text;
     $("upSummary").className = "summary " + cls + (big ? " big" : "");
     $("btnRetry").hidden = pumping || !left.length;
     $("btnDlAll").hidden = !left.length;
+    renderSegInfo();
+    renderDone(left, segsLeft);
+  }
+
+  // D 完成：大圖示＋「已上傳 N 段」，跟著上傳狀態變（最近結束的那場）
+  function renderDone(left, segsLeft) {
+    const ended = Array.from(meetings.values()).filter((m) => m !== meeting && m.status !== "recording" && m.status !== "switching");
+    const m = ended[ended.length - 1];
+    if (!m) return;
+    let up = 0;
+    rows.forEach((st, name) => { if (st === "已上傳" && prefixOfName(name) === m.prefix && !/_完成\.json$/.test(name)) up++; });
+    let title, state, icon;
+    if (left.some((r) => r.status === "failed")) {
+      title = segsLeft ? "有 " + segsLeft + " 段還沒上傳" : "完成檔還沒上傳"; state = "ng"; icon = "i-alert";
+    } else if (left.length) {
+      title = "上傳中（已上傳 " + up + " 段）"; state = "busy"; icon = "i-upload";
+    } else {
+      title = m.segments ? "已上傳 " + m.segments + " 段" : "沒有錄到聲音"; state = m.segments ? "" : "ng"; icon = m.segments ? "i-done" : "i-alert";
+    }
+    $("doneTitle").textContent = title;
+    $("doneHead").className = "done-head" + (state ? " " + state : "");
+    $("doneIco").querySelector("use").setAttribute("href", "#" + icon);
+    $("doneNote").hidden = state === "ng";
   }
 
   $("btnRetry").addEventListener("click", () => retryAll("全部重送"));
@@ -737,8 +1045,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     failDismissed = (await store.all()).filter((r) => r.status !== "recording" && r.lastError && !r.rejected).map((r) => r.name).join("|");
     $("failBanner").hidden = true;
   });
-  $("btnRejectX").addEventListener("click", () => { rejectDismissed = $("rejectText").textContent.replace("❌ 上傳被拒絕：", ""); $("rejectBanner").hidden = true; });
-  $("btnPersistX").addEventListener("click", () => { $("persistBanner").hidden = true; });
+  $("btnRejectX").addEventListener("click", () => { rejectDismissed = $("rejectText").textContent.replace("上傳被拒絕：", ""); $("rejectBanner").hidden = true; });
   $("btnAutoEndX").addEventListener("click", () => { $("autoEndBanner").hidden = true; });
 
   // ---------- 今天的行事曆 ----------
@@ -752,17 +1059,19 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     if (!cfg.fake() && !cfg.url()) { evState = "nocfg"; renderEvents(); return; }
     evLoading = true;
     if (!events) { evState = "loading"; renderEvents(); }
-    const v = await request({ action: "todayEvents" }, EVENT_RETRY_WAIT, null, "讀取行事曆");
+    const body = { action: "todayEvents" };
+    if (cfg.me()) body.memberId = cfg.me(); // v5.1：後端標出我參加的會議（mine）
+    const v = await request(body, EVENT_RETRY_WAIT, null, "讀取行事曆");
     evLoading = false;
     if (v.ok) {
-      events = v.r.events.map((e) => ({ id: String(e.id), title: String(e.title || "（沒有標題）"), start: Date.parse(e.start), end: Date.parse(e.end) }))
+      events = v.r.events.map((e) => ({ id: String(e.id), title: String(e.title || "（沒有標題）"), start: Date.parse(e.start), end: Date.parse(e.end), guests: typeof e.guests === "number" ? e.guests : null, mine: e.mine === true }))
         .filter((e) => e.id && isFinite(e.start) && isFinite(e.end));
       evState = "ok"; evFailed = false;
-      log("📅 今天的會議 " + events.length + " 場（" + why + "）");
+      log("今天的會議 " + events.length + " 場（" + why + "）");
     } else {
       evFailed = true; evErr = v.reject || v.fail;
       evState = events ? "stale" : "fail";
-      log("⚠ 讀不到行事曆（" + why + "）：" + evErr);
+      log("讀不到行事曆（" + why + "）：" + evErr);
     }
     renderEvents();
   }
@@ -789,11 +1098,14 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   function evButton(e, c, sel, onPick) {
     const b = el("button", "ev " + c + (sel ? " sel" : ""));
     b.type = "button"; b.dataset.id = e.id; b.setAttribute("aria-pressed", sel ? "true" : "false");
-    b.append(el("span", "t mono", HM(e.start) + "–" + HM(e.end)), el("span", "ti", e.title));
-    const tags = el("span", "tags");
-    if (EV_TAG[c]) tags.append(el("span", "tag " + c, EV_TAG[c]));
-    if (recordedIds().includes(e.id)) tags.append(el("span", "tag rec", "已錄過"));
-    if (tags.childNodes.length) b.append(tags);
+    // iOS 清單：左邊開始時間、中間名稱；下面一行結束時間・與會人數（後端有給才顯示）・狀態；選到的右邊打勾
+    b.append(el("span", "t mono", HM(e.start)), el("span", "ti", e.title));
+    const sub = el("span", "sub");
+    sub.append(el("span", "mono", "到 " + HM(e.end)));
+    if (typeof e.guests === "number" && e.guests > 0) sub.append(el("span", "", e.guests + " 人"));
+    if (EV_TAG[c]) sub.append(el("span", "tag " + c, EV_TAG[c]));
+    if (recordedIds().includes(e.id)) sub.append(el("span", "tag rec", "已錄過"));
+    b.append(sub, svgIcon("i-check", "ico ck"));
     b.addEventListener("click", () => onPick(e));
     return b;
   }
@@ -804,26 +1116,32 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     const list = sortedEvents(now);
     // 預設選取：進行中，沒有就即將開始；使用者自己選過就不動
     if (selAuto || !list.some((x) => x.e.id === selId)) {
-      const d = list.find((x) => x.c === "now") || list.find((x) => x.c === "soon");
+      const d = list.find((x) => x.c === "now" && x.e.mine) || list.find((x) => x.c === "soon" && x.e.mine) ||
+        list.find((x) => x.c === "now") || list.find((x) => x.c === "soon");
       const id = d ? d.e.id : "";
       if (id !== selId || !selAuto) { selId = id; selAuto = true; $("meetingName").value = d ? d.e.title : ""; }
     }
     const main = $("evList"), endedBox = $("evEndedList");
-    main.textContent = ""; endedBox.textContent = "";
+    const mineBox = $("evMine");
+    main.textContent = ""; endedBox.textContent = ""; mineBox.textContent = "";
     const pick = (e) => { selId = e.id; selAuto = false; $("meetingName").value = e.title; $("startMsg").textContent = ""; renderEvents(); };
     let nEnded = 0;
     list.forEach((x) => {
       const b = evButton(x.e, x.c, x.e.id === selId, pick);
-      if (x.c === "ended") { endedBox.append(b); nEnded++; } else main.append(b);
+      if (x.c === "ended") { endedBox.append(b); nEnded++; } else if (x.e.mine) mineBox.append(b); else main.append(b);
     });
+    main.hidden = !main.childNodes.length;
+    // 有「我是誰」時分兩組：我的會議（mine）、其他會議；舊後端沒有 mine 就是一個清單
+    $("evMineWrap").hidden = !mineBox.childNodes.length;
+    $("evOtherCap").hidden = !mineBox.childNodes.length || !main.childNodes.length;
     $("evEnded").hidden = !nEnded;
     $("evEndedSum").textContent = "已結束（" + nEnded + "）";
     const msg = {
       loading: "讀取今天的會議…",
-      nocfg: "還沒設定上傳網址，讀不到行事曆：按右上角 ⚙️，或用 ⚡ 臨時會議",
-      fail: "讀不到行事曆（" + evErr + "）：按 🔄 再試，或用 ⚡ 臨時會議",
-      stale: "⚠ 更新行事曆失敗，顯示的是上次讀到的",
-      ok: list.length ? (list.every((x) => x.c === "ended") ? "今天的會議都結束了：補錄請展開「已結束」，或用 ⚡ 臨時會議" : "") : "今天行事曆沒有會議：用 ⚡ 臨時會議"
+      nocfg: "還沒設定上傳網址，讀不到行事曆：按右上角的設定，或用「臨時會議」",
+      fail: "讀不到行事曆（" + evErr + "）：按右上角的重新讀取，或用「臨時會議」",
+      stale: "更新行事曆失敗，顯示的是上次讀到的",
+      ok: list.length ? (list.every((x) => x.c === "ended") ? "今天的會議都結束了：補錄請展開「已結束」，或用「臨時會議」" : "") : "今天行事曆沒有會議：用「臨時會議」"
     }[evState] || "";
     $("evMsg").textContent = msg;
     $("evMsg").className = "msg " + (evState === "fail" || evState === "nocfg" ? "ng" : "warn");
@@ -832,7 +1150,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     if (!$("evSheet").hidden) renderEvSheet();
   }
 
-  // 只有讀不到行事曆、而且 ⚡ 建活動也失敗時，才能不選會議直接輸入名稱開始（錄音比日曆重要）
+  // 只有讀不到行事曆、而且臨時會議建活動也失敗時，才能不選會議直接輸入名稱開始（錄音比日曆重要）
   const manualAllowed = () => (evFailed || evState === "nocfg") && quickFailed;
   function updateStartBtn() {
     const manual = !selId && manualAllowed();
@@ -858,11 +1176,12 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     const now = Date.now();
     const list = sortedEvents(now).filter((x) => !meeting || x.e.id !== meeting.eventId);
     list.forEach((x) => box.append(evButton(x.e, x.c, false, (e) => { $("evSheet").hidden = true; switchTo({ ev: e }); })));
-    $("evSheetMsg").textContent = evLoading && !events ? "讀取今天的會議…" : !events ? "讀不到行事曆：按 🔄 再試，或用 ⚡ 臨時會議" :
+    $("evSheetMsg").textContent = evLoading && !events ? "讀取今天的會議…" : !events ? "讀不到行事曆：按重新讀取再試，或用「臨時會議」" :
       list.length ? "" : "今天沒有其他會議";
+    box.hidden = !list.length;
   }
 
-  // ---------- 成員名單（⚡臨時會議選人）----------
+  // ---------- 成員名單（臨時會議選人）----------
   // 手機只存 id、姓名、部門、組（不存 email）；勾選的 id 交給後端對回 email
   const DIRECT = "部門直屬";
   let members = null, memState = "", memErr = "", memLoading = false;
@@ -889,9 +1208,9 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     } else {
       memErr = v.reject || v.fail;
       memState = members ? "stale" : "fail";
-      log("⚠ 讀不到成員名單（" + why + "）：" + memErr);
+      log("讀不到成員名單（" + why + "）：" + memErr);
     }
-    renderQuick();
+    renderQuick(); renderMe();
   }
 
   function deptsOf(list) {
@@ -954,7 +1273,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     if (!list.length) {
       msg = memState === "loading" ? "讀取成員名單中…" : "讀不到成員名單" + (memErr ? "（" + memErr + "）" : "") + "：可以不選人直接開始";
       cls = memState === "loading" ? "" : "ng";
-    } else if (memState === "stale") msg = "⚠ 更新名單失敗，用手機上次的名單";
+    } else if (memState === "stale") msg = "更新名單失敗，用手機上次的名單";
     else if (!shown.length) msg = q ? "找不到「" + q + "」" : "這裡沒有人";
     $("qMsg").textContent = msg; $("qMsg").className = "msg " + cls;
     $("qStart").hidden = !list.length;
@@ -968,19 +1287,8 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     loadMembers("選人");
     $("qName").focus();
   }
-  function quickGo(withPeople) {
-    const raw = $("qName").value.trim();
-    if (!cleanName(raw)) { $("qErr").textContent = "請先輸入會議名稱"; $("qName").focus(); return; }
-    const ids = withPeople ? pickedIds() : [];
-    if (withPeople) lsSet("mv_member_pick", JSON.stringify(ids));
-    $("quickSheet").hidden = true;
-    const t = { name: raw, quick: { memberIds: ids } };
-    if (meeting) switchTo(t); else startMeeting(t);
-  }
+  // 按「開始」先跳確認選單（v5.1，見 askQuick）
   $("btnQuick").addEventListener("click", openQuick);
-  $("btnQuick2").addEventListener("click", openQuick);
-  $("qStart").addEventListener("click", () => quickGo(true));
-  $("qNoPick").addEventListener("click", () => quickGo(false));
   $("qCancel").addEventListener("click", () => { $("quickSheet").hidden = true; });
   $("qSearch").addEventListener("input", renderQuick);
 
@@ -1007,7 +1315,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     const can = (m) => { try { return MediaRecorder.isTypeSupported(m); } catch (e) { return false; } };
     if (can("audio/mp4")) return { mime: "audio/mp4", ext: "m4a" };
     $("webmBanner").hidden = false;
-    log("⚠ 不支援 audio/mp4，改錄 webm（Studio 能不能讀需要查證）");
+    log("注意：不支援 audio/mp4，改錄 webm（Studio 能不能讀需要查證）");
     return { mime: "audio/webm;codecs=opus", ext: "webm" };
   }
 
@@ -1021,7 +1329,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     const t = micStream && micStream.getAudioTracks()[0];
     return !!(t && t.readyState === "live");
   }
-  // 麥克風（聲音處理全關）→ ×48 → 限幅 → 錄音串流；音量條量的是放大後的聲音（參數照 mic-test v6 實測）
+  // 麥克風（聲音處理全關）→ ×GAIN（預設 64）→ 限幅 → 錄音串流；音量條量的是放大後的聲音（參數照 mic-test v6 實測）
   async function openMic() {
     micStream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
@@ -1036,7 +1344,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     src.connect(gain); gain.connect(limiter); limiter.connect(dest); limiter.connect(analyser);
     const t = micStream.getAudioTracks()[0];
     log("麥克風：" + (t.label || "未提供名稱"));
-    t.addEventListener("ended", () => { log("⚠ 麥克風被中斷"); checkStopped(); });
+    t.addEventListener("ended", () => { log("麥克風被中斷"); checkStopped(); });
     if (!mimeType) { const pm = pickMime(); mimeType = pm.mime; ext = pm.ext; }
   }
   async function ensureMic() { if (!micAlive()) await openMic(); }
@@ -1052,7 +1360,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     const rec = new MediaRecorder(dest.stream, { mimeType: mimeType, audioBitsPerSecond: BITRATE });
     seg.rec = rec;
     rec.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) seg.chunks.push(e.data); });
-    rec.addEventListener("error", (e) => log("⚠ 錄音錯誤：" + (e.error ? e.error.name : "未知")));
+    rec.addEventListener("error", (e) => log("錄音錯誤：" + (e.error ? e.error.name : "未知")));
     // stop 事件是非同步的：結束會議時要等每一段都存好，才能算段數
     seg.saved = new Promise((resolve) => {
       rec.addEventListener("stop", () => resolve(saveSegment(seg, rec.mimeType || mimeType)));
@@ -1060,7 +1368,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     m.saves.push(seg.saved);
     rec.start();
     cur = seg;
-    $("segInfo").textContent = "第 " + seg.no + " 段";
+    renderSegInfo();
     setRow(segName(seg), "錄音中");
     clearTimeout(segTimer);
     segTimer = setTimeout(rotate, SEG_MS);
@@ -1086,7 +1394,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
       const m = seg.m, name = segName(seg);
       window.__mvSegLog.push({ name: name, startAt: seg.startAt, stopAt: seg.stopAt });
       const blob = new Blob(seg.chunks, { type: type });
-      if (!blob.size) { rows.delete(name); renderUploads(); log("⚠ " + name + " 沒有錄到資料，略過"); return; }
+      if (!blob.size) { rows.delete(name); renderUploads(); log(name + " 沒有錄到資料，略過"); return; }
       m.segments++;
       const rec = { kind: "segment", name: name, prefix: m.prefix, mimeType: type.split(";")[0],
         blob: blob, status: "pending", createdAt: Date.now() };
@@ -1096,7 +1404,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
       log(labels([rec]) + "存好：" + name + "（" + mb(blob.size) + "）");
       if (useMem) download(rec); // 暫存不能用：頁面關掉就沒了，先下載一份
       pump();
-    }).catch((e) => log("❌ 存檔失敗：" + e.message));
+    }).catch((e) => log("存檔失敗：" + e.message));
     return saving;
   }
 
@@ -1122,7 +1430,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     } else {
       await store.del(completeName(m));
       rows.delete(completeName(m));
-      log("⚠ 會議結束，但沒有錄到任何一段：" + m.name);
+      log("會議結束，但沒有錄到任何一段：" + m.name);
     }
     pump();
   }
@@ -1133,43 +1441,61 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
       const free = (e.quota - e.usage) / 1048576;
       log("暫存可用空間約 " + Math.round(free) + " MB");
       if (free < LOW_SPACE_MB) {
-        $("spaceBanner").textContent = "⚠ 手機暫存空間只剩約 " + Math.round(free) + " MB（1 小時約 30 MB），請先清出空間";
+        $("spaceBanner").textContent = "手機暫存空間只剩約 " + Math.round(free) + " MB（1 小時約 30 MB），請先清出空間";
         $("spaceBanner").hidden = false;
       }
-    } catch (e) { log("⚠ 無法檢查剩餘空間"); }
+    } catch (e) { log("無法檢查剩餘空間"); }
   }
 
-  // ⚡臨時會議：建日曆和開始錄音同時進行（建日曆最久要等好幾分鐘，不能讓會議等）
-  // 同一個 requestId 重送，後端不會建第二個活動、不會重寄邀請；都失敗照樣錄音
-  // 後端實驗模式（沒設 LIVE_MODE）不會邀請人，回應看不出模式 → 畫面只寫「勾選 N 人」，不寫「已寄邀請」
+  // 臨時會議：建日曆和開始錄音同時進行（建日曆最久要等好幾分鐘，不能讓會議等）
+  // 同一個 requestId 重送，後端不會建第二個活動；都失敗照樣錄音
+  // 後端 v0.6.2 起回 added＝加進活動的與會者人數（正式模式；不寄邀請信）、invited 一律 0；顯示規則見 guestText()
   function createEvent(title, memberIds) {
     const requestId = prefixOf(new Date(), cleanName(title)) + "_" + Math.random().toString(36).slice(2).padEnd(6, "0").slice(0, 6);
     const res = { eventId: "", mine: null };
     const body = { action: "createEvent", title: title.slice(0, 60), minutes: QUICK_MS / MIN, requestId: requestId };
     if (memberIds.length) body.memberIds = memberIds;
+    if (cfg.me()) body.memberId = cfg.me(); // v5.1：正式模式把自己加成與會者
     res.done = request(body, EVENT_RETRY_WAIT, null, "建立日曆活動").then(async (v) => {
       const m = res.mine;
       if (v.ok) {
         res.eventId = v.r.eventId;
         const unknown = Array.isArray(v.r.unknownIds) ? v.r.unknownIds.length : 0;
         const guests = typeof v.r.guests === "number" ? v.r.guests : memberIds.length - unknown;
-        log("📅 日曆活動已建立" + (memberIds.length ? "，勾選 " + guests + " 人" : "") + (v.r.duplicate ? "（重送，沿用同一個活動）" : "") +
+        const who = guestText(v.r, guests, memberIds.length);
+        log("日曆活動已建立" + (who ? "，" + who : "") + (v.r.duplicate ? "（重送，沿用同一個活動）" : "") +
           (unknown ? "；" + unknown + " 人不在成員名單" : ""));
         if (m) {
           m.eventId = res.eventId;
-          m.eventText = "📅 日曆活動已建立" + (memberIds.length ? "（勾選 " + guests + " 人）" : "");
-          m.eventWarn = unknown ? "⚠ 有 " + unknown + " 人不在成員名單，沒有加進日曆" : "";
+          m.eventText = "日曆活動已建立" + (who ? "（" + who + "）" : "");
+          m.eventWarn = unknown ? "有 " + unknown + " 人不在成員名單，沒有加進日曆" : "";
           if (m.status !== "done") await saveComplete(m);
         }
       } else {
         quickFailed = true;
-        if (m) { m.eventText = "⚠ 日曆活動建立失敗，照樣錄音：這場沒有對應日曆活動"; m.eventNg = true; }
-        log("⚠ 日曆活動建立失敗，照樣錄音（" + VERSION + "：" + (v.reject || v.fail) + "）");
+        if (m) { m.eventText = "日曆活動建立失敗，照樣錄音：這場沒有對應日曆活動"; m.eventNg = true; }
+        log("日曆活動建立失敗，照樣錄音（" + VERSION + "：" + (v.reject || v.fail) + "）");
         updateStartBtn();
       }
       renderEventMsg();
     });
     return res;
+  }
+
+  // v0.6.2 有 added：加進活動的人數（不寄邀請）；v0.6.1 只有 invited；更舊的後端兩個都沒有 → 「勾選 N 人」
+  function guestText(r, guests, picked) {
+    if (typeof r.added === "number") return r.added > 0 ? "已加入 " + r.added + " 位與會者（不寄邀請）" : picked ? "實驗模式，沒有加入與會者" : "";
+    if (typeof r.invited === "number") return r.invited > 0 ? "已寄邀請 " + r.invited + " 人" : picked ? "實驗模式，沒有邀請任何人" : "";
+    return picked ? "勾選 " + guests + " 人" : "";
+  }
+
+  // 錄音中一行狀態：「第 2 段・已上傳 1 段」
+  function renderSegInfo() {
+    const m = meeting;
+    if (!m) return;
+    let up = 0;
+    rows.forEach((st, name) => { if (st === "已上傳" && prefixOfName(name) === m.prefix && !/_完成\.json$/.test(name)) up++; });
+    $("segInfo").textContent = "第 " + (cur ? cur.no : 1) + " 段・已上傳 " + up + " 段";
   }
 
   function uniqueName(d, name) {
@@ -1197,16 +1523,16 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     const m = meeting;
     if (!m) return;
     let text, cls = "";
-    if (m.quick) { text = m.eventText || "📅 建立日曆活動中…"; cls = m.eventNg ? "ng" : ""; }
-    else if (m.eventId) text = "📅 日曆：" + HM(m.evStart) + "–" + HM(m.evEnd);
+    if (m.quick) { text = m.eventText || "建立日曆活動中…"; cls = m.eventNg ? "ng" : ""; }
+    else if (m.eventId) text = "日曆 " + HM(m.evStart) + "–" + HM(m.evEnd);
     else { text = "這場沒有對應日曆活動"; cls = "ng"; }
-    $("eventMsg").textContent = text; $("eventMsg").className = "sub " + cls; $("eventMsg").hidden = false;
+    $("eventMsg").textContent = text; $("eventMsg").className = "small-muted " + cls; $("eventMsg").hidden = false;
     $("eventWarn").textContent = m.eventWarn || ""; $("eventWarn").hidden = !m.eventWarn;
   }
   function showRecUI() {
-    $("startCard").hidden = true; $("recCard").hidden = false; $("graceCard").hidden = true;
-    $("recTitle").textContent = "錄音中：" + meeting.name;
-    $("segInfo").textContent = "第 " + (cur ? cur.no : 1) + " 段";
+    show("rec"); $("graceCard").hidden = true;
+    $("recTitle").textContent = meeting.name;
+    renderSegInfo();
     renderEventMsg(); renderNext(); tick(); renderUploads();
   }
 
@@ -1217,7 +1543,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
       $("startMsg").textContent = "這個瀏覽器不能錄音（" + VERSION + "）"; return;
     }
     try { ensureAudio(); } catch (e) { $("startMsg").textContent = "音訊無法啟動：" + e.message; return; }
-    if (!cfg.fake() && !cfg.url()) $("startMsg").textContent = "還沒設定上傳網址：按右上角 ⚙️（錄音會先存在手機）";
+    if (!cfg.fake() && !cfg.url()) $("startMsg").textContent = "還沒設定上傳網址：按右上角的設定（錄音會先存在手機）";
     recBusy = true; updateStartBtn(); $("btnQuick").disabled = true;
     if (graceM) finishGrace(); // 上一場在「可以復原」期間又開新會議 → 上一場直接結束
     checkSpace();
@@ -1225,7 +1551,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     try { await ensureMic(); }
     catch (e) {
       $("startMsg").textContent = "拿不到麥克風：" + e.name + "（" + VERSION + "）";
-      log("❌ 麥克風失敗：" + e.name + "：" + e.message);
+      log("麥克風失敗：" + e.name + "：" + e.message);
       recBusy = false; updateStartBtn(); $("btnQuick").disabled = false;
       return;
     }
@@ -1246,12 +1572,12 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     stopSeg(last); cur = null; meeting = null;
     if (last) last.saved.then(() => { if (!meeting) closeMic(); }); else closeMic();
     disarmEnd();
-    $("recCard").hidden = true; $("startCard").hidden = false;
+    show("done");
     $("endBanner").hidden = true; $("undoBar").hidden = true; $("stoppedBanner").hidden = true;
     updateStartBtn(); renderEvents(); renderUploads();
   }
 
-  // 層 1：手動結束（按兩次）→ 2 分鐘內可以「繼續錄這場」，時間到才送完成檔
+  // 層 1：手動結束（確認選單）→ 2 分鐘內可以「繼續錄這場」，時間到才送完成檔
   let graceM = null, graceUntil = 0, graceTimer = 0;
   function endMeeting() {
     const m = meeting;
@@ -1275,12 +1601,12 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   async function resumeGrace() {
     const m = graceM;
     if (!m || recBusy) return;
-    try { ensureAudio(); } catch (e) { log("❌ 音訊無法啟動：" + e.message); return; }
+    try { ensureAudio(); } catch (e) { log("音訊無法啟動：" + e.message); return; }
     recBusy = true;
     clearTimeout(graceTimer); graceM = null; $("graceCard").hidden = true;
     try { await ensureMic(); }
     catch (e) {
-      log("❌ 無法繼續錄這場（麥克風：" + e.name + "），完成檔照常送出");
+      log("無法繼續錄這場（麥克風：" + e.name + "），完成檔照常送出");
       recBusy = false; finalize(m); return;
     }
     m.status = "recording"; m.end = ""; m.endReason = "";
@@ -1295,7 +1621,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   $("btnGraceResume").addEventListener("click", resumeGrace);
 
   // 連開會議：一鍵切換，錄音不中斷（停舊的一段，立刻用同一個串流開新會議的第 01 段）
-  // 切到日曆活動有 5 秒「復原切換」；⚡臨時會議已經建活動、寄邀請，不能復原
+  // 切到日曆活動有 5 秒「復原切換」；臨時會議已經建活動，不能復原
   let switchUndo = null;
   async function switchTo(t) {
     const old = meeting;
@@ -1360,9 +1686,9 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     finishUndo();
     m.end = new Date().toISOString(); m.endReason = "auto";
     stopRecording();
-    $("autoEndText").textContent = "⏹ 已自動結束：" + m.name + "（超過預定結束 " + dur(AUTOEND_MS) + "都沒有操作）";
+    $("autoEndText").textContent = "已自動結束：" + m.name + "（超過預定結束 " + dur(AUTOEND_MS) + "都沒有操作）";
     $("autoEndBanner").hidden = false;
-    log("⏹ 自動結束（超過預定結束 " + dur(AUTOEND_MS) + "）：" + m.name);
+    log("自動結束（超過預定結束 " + dur(AUTOEND_MS) + "）：" + m.name);
     finalize(m);
   }
   ["pointerdown", "touchstart", "keydown", "click"].forEach((t) => document.addEventListener(t, () => { lastTouch = Date.now(); }, true));
@@ -1382,11 +1708,11 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
         const n = Math.floor(over / REMIND_MS);
         if (n > m.remind || !m.remindAt) {
           m.remind = n; m.remindAt = now;
-          log("⏰ " + m.name + " 預定 " + HM(m.endAt) + " 結束" + (n ? "（第 " + (n + 1) + " 次提醒）" : ""));
+          log(m.name + " 預定 " + HM(m.endAt) + " 結束" + (n ? "（第 " + (n + 1) + " 次提醒）" : ""));
           if (navigator.vibrate) navigator.vibrate(300);
         }
-        $("endBanner").className = "banner row " + (n ? "ng" : "warn");
-        $("endText").textContent = "⏰ " + m.name + " 預定 " + HM(m.endAt) + " 結束" + (over >= MIN ? "（已超過 " + Math.floor(over / MIN) + " 分鐘）" : "");
+        $("endBanner").className = "strip" + (n ? " ng" : "");
+        $("endText").textContent = m.name + " 預定 " + HM(m.endAt) + " 結束" + (over >= MIN ? "（已超過 " + Math.floor(over / MIN) + " 分鐘）" : "");
         const nx = nextEvent(m, now);
         const showNx = !!(nx && nx.start <= now + 10 * MIN);
         $("btnSwitchB").hidden = !showNx;
@@ -1397,7 +1723,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
       const left = Math.max(0, Math.ceil((graceUntil - now) / 1000));
       $("graceText").textContent = "已結束：" + graceM.name + "（" + Math.floor(left / 60) + ":" + pad(left % 60) + " 後送出）";
     }
-    if (switchUndo) $("btnUndo").textContent = "↩ 復原切換（" + Math.max(0, Math.ceil((switchUndo.until - now) / 1000)) + "）";
+    if (switchUndo) $("btnUndo").textContent = "復原切換（" + Math.max(0, Math.ceil((switchUndo.until - now) / 1000)) + "）";
     if (now - lastEvRender >= 30000) renderEvents();
   }
   setInterval(tick, 1000);
@@ -1408,23 +1734,18 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     tick();
   });
 
-  // 結束要按兩次，避免誤觸（下方按鈕和時間到橫幅共用）
-  let endArmed = 0;
-  function disarmEnd() {
-    clearTimeout(endArmed); endArmed = 0;
-    $("btnEnd").textContent = "結束會議"; $("btnEndB").textContent = "結束會議";
-  }
+  // 結束會議：先跳出底部確認選單（結束並上傳／繼續錄音），避免誤觸（下方按鈕和時間到狀態列共用）
+  function disarmEnd() { $("endSheet").hidden = true; }
   function pressEnd() {
-    if (!endArmed) {
-      $("btnEnd").textContent = "再按一次確認結束"; $("btnEndB").textContent = "再按一次確認結束";
-      endArmed = setTimeout(disarmEnd, 4000);
-      return;
-    }
-    disarmEnd();
-    endMeeting();
+    if (!meeting) return;
+    $("endSheetText").textContent = "結束「" + meeting.name + "」？錄音會全部上傳";
+    $("endSheet").hidden = false;
   }
   $("btnEnd").addEventListener("click", pressEnd);
   $("btnEndB").addEventListener("click", pressEnd);
+  $("btnEndConfirm").addEventListener("click", () => { disarmEnd(); endMeeting(); });
+  $("btnEndCancel").addEventListener("click", disarmEnd);
+  $("endSheet").addEventListener("click", (e) => { if (e.target === $("endSheet")) disarmEnd(); });
 
   // 錄音停了的處理：切回畫面時檢查，停了就警告，讓使用者接下一段
   function isStopped() {
@@ -1434,7 +1755,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   function checkStopped() {
     if (isStopped()) {
       $("stoppedBanner").hidden = false;
-      log("⚠ 錄音已經停了（" + VERSION + "）");
+      log("錄音已經停了（" + VERSION + "）");
     }
   }
   $("btnResume").addEventListener("click", async () => {
@@ -1448,7 +1769,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
       keepAwake();
       $("stoppedBanner").hidden = true;
       log("繼續錄音：第 " + cur.no + " 段");
-    } catch (e) { log("❌ 無法繼續錄音：" + e.name + "：" + e.message); }
+    } catch (e) { log("無法繼續錄音：" + e.name + "：" + e.message); }
   });
 
   // ---------- 音量：平均 dBFS、連續 10 秒低於 -40 提醒 ----------
@@ -1471,12 +1792,12 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   async function keepAwake() {
     if (!("wakeLock" in navigator)) { $("wakeBanner").hidden = false; return; }
     try { wakeLock = await navigator.wakeLock.request("screen"); }
-    catch (e) { $("wakeBanner").hidden = false; log("⚠ 螢幕常亮失敗：" + e.name); }
+    catch (e) { $("wakeBanner").hidden = false; log("螢幕常亮失敗：" + e.name); }
   }
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) { autoRetry("回到畫面"); loadEvents("回到畫面"); }
     if (!meeting) return;
-    if (document.hidden) { hiddenAt = Date.now(); log("⚠ 切到背景"); return; }
+    if (document.hidden) { hiddenAt = Date.now(); log("切到背景"); return; }
     log("回到畫面（離開 " + Math.round((Date.now() - hiddenAt) / 1000) + " 秒）");
     if (audioCtx && audioCtx.state !== "running") audioCtx.resume();
     keepAwake();
@@ -1492,40 +1813,477 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     if (meeting || graceM || switchUndo || leftCount > 0) { e.preventDefault(); e.returnValue = ""; }
   });
 
-  // ---------- 設定畫面 ----------
+  // ---------- 畫面切換：一次只顯示一個（A 第一次設定、B 今天的會議、C 錄音中、D 完成、設定頁）----------
+  const SCREENS = { setup: "setupScr", start: "startCard", rec: "recCard", done: "doneCard", settings: "sheet", file: "fileScr" };
+  const STRIP_SLOT = { start: "stripSlotStart", rec: "stripSlotRec", done: "stripSlotDone" };
+  const UP_SLOT = { start: "upSlotStart", done: "upSlotDone" };
+  let screen = "", backTo = "start";
+  function show(name) {
+    screen = name;
+    Object.keys(SCREENS).forEach((k) => { $(SCREENS[k]).hidden = k !== name; });
+    if (STRIP_SLOT[name]) $(STRIP_SLOT[name]).append($("strips"));
+    if (UP_SLOT[name]) $(UP_SLOT[name]).append($("upCard"));
+    if (name === "setup") renderSetup();
+    window.scrollTo(0, 0);
+  }
+  // 回首頁：還沒設定（也不是假上傳）就先到 A
+  function goHome() { show(!cfg.fake() && !cfg.url() ? "setup" : "start"); renderEvents(); }
+
+  // ---------- 設定頁 ----------
   function openSettings() {
+    if (screen !== "settings") backTo = screen;
     $("cfgUrl").value = cfg.url(); $("cfgKey").value = cfg.key();
     $("cfgFake").checked = lsGet("mv_fake_upload") === "1";
-    $("cfgMsg").textContent = ""; $("sheet").hidden = false;
+    $("cfgMsg").textContent = "";
+    renderTheme(); renderMeRows(); renderDiag();
+    show("settings");
   }
-  function saveSettings() {
-    const ok = lsSet("mv_api_url", $("cfgUrl").value.trim()) &&
-      lsSet("mv_upload_key", $("cfgKey").value.trim()) &&
-      lsSet("mv_fake_upload", $("cfgFake").checked ? "1" : "");
-    $("cfgMsg").textContent = ok ? "已儲存" : "無法儲存（瀏覽器擋住本機儲存，例如無痕模式）";
-    $("cfgMsg").className = "msg " + (ok ? "ok" : "ng");
-    refreshBanners();
+  function closeSettings() {
+    if (backTo === "start" || backTo === "setup") goHome(); else show(backTo);
+  }
+  // 測試並儲存：先用輸入的網址和 key 打 ping，成功才存；失敗直接說原因
+  async function testAndSave(url, key, msgEl, btn) {
+    url = url.trim(); key = key.trim();
+    if (!cfg.fake() && !url) { msgEl.textContent = "請先輸入部署網址"; msgEl.className = "msg ng"; return false; }
+    btn.disabled = true; msgEl.textContent = "連線中…"; msgEl.className = "msg";
+    cfgOverride = { url: url, key: key };
+    let v;
+    try { v = await request({ action: "ping" }, [], null, "測試連線"); } finally { cfgOverride = null; btn.disabled = false; }
+    if (!v.ok) {
+      msgEl.textContent = "連線失敗：" + (v.reject || v.fail) + "（" + VERSION + "）"; msgEl.className = "msg ng";
+      return false;
+    }
+    const ok = lsSet("mv_api_url", url) && lsSet("mv_upload_key", key);
+    msgEl.textContent = ok ? "連線 OK，已儲存" + (cfg.fake() ? "（假上傳模式）" : "") : "連線 OK，但無法儲存（瀏覽器擋住本機儲存，例如無痕模式）";
+    msgEl.className = "msg " + (ok ? "ok" : "ng");
+    if (ok) { autoRetry("設定已儲存"); loadEvents("設定已儲存"); loadMembers("設定已儲存"); }
     return ok;
   }
   $("btnGear").addEventListener("click", openSettings);
+  $("btnGear2").addEventListener("click", openSettings);
   $("btnRejectGear").addEventListener("click", openSettings);
-  $("btnClose").addEventListener("click", () => { $("sheet").hidden = true; });
-  $("btnSave").addEventListener("click", () => {
-    if (!saveSettings()) return;
-    autoRetry("設定已儲存"); loadEvents("設定已儲存"); loadMembers("設定已儲存");
+  $("btnClose").addEventListener("click", closeSettings);
+  $("btnSave").addEventListener("click", () => testAndSave($("cfgUrl").value, $("cfgKey").value, $("cfgMsg"), $("btnSave")));
+  // 第一次設定：「我是誰」必填，先存再測試連線（測試成功會用它讀會議）
+  $("btnSetupSave").addEventListener("click", async () => {
+    if (!setupMe) { $("setupMsg").textContent = "請選「我是誰」"; $("setupMsg").className = "msg ng"; return; }
+    lsSet("mv_me_id", setupMe.id); lsSet("mv_me", JSON.stringify(setupMe));
+    events = null; selAuto = true;
+    if (await testAndSave($("setupUrl").value, $("setupKey").value, $("setupMsg"), $("btnSetupSave"))) { fromLink = false; renderMeRows(); goHome(); }
   });
-  $("btnPing").addEventListener("click", async () => {
-    saveSettings();
-    $("cfgMsg").textContent = "連線中…"; $("cfgMsg").className = "msg";
-    const v = await request({ action: "ping" }, [], null, "測試連線");
-    $("cfgMsg").textContent = v.ok ? "連線 OK" + (cfg.fake() ? "（假上傳模式）" : "") : "連線失敗：" + (v.reject || v.fail) + "（" + VERSION + "）";
-    $("cfgMsg").className = "msg " + (v.ok ? "ok" : "ng");
+  $("cfgFake").addEventListener("change", () => {
+    lsSet("mv_fake_upload", $("cfgFake").checked ? "1" : "");
+    refreshBanners(); loadEvents("切換假上傳"); loadMembers("切換假上傳");
   });
+  // key 預設遮住，按眼睛顯示
+  function eyeToggle(btnId, inputId) {
+    $(btnId).addEventListener("click", () => {
+      const reveal = $(inputId).type === "password";
+      $(inputId).type = reveal ? "text" : "password";
+      $(btnId).setAttribute("aria-label", reveal ? "遮住 key" : "顯示 key");
+      $(btnId).querySelector("use").setAttribute("href", reveal ? "#i-eye-off" : "#i-eye");
+    });
+  }
+  eyeToggle("setupEye", "setupKey"); eyeToggle("cfgEye", "cfgKey");
+
+  // 外觀：自動（跟系統，預設）／亮色／暗色，存在這支手機（讀不到就用自動）
+  function applyTheme() {
+    const t = lsGet("mv_theme");
+    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+    else delete document.documentElement.dataset.theme;
+  }
+  function renderTheme() {
+    const t = lsGet("mv_theme") || "auto";
+    document.querySelectorAll("#themeSeg button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.theme === t ? "true" : "false"));
+  }
+  document.querySelectorAll("#themeSeg button").forEach((b) => b.addEventListener("click", () => {
+    lsSet("mv_theme", b.dataset.theme === "auto" ? "" : b.dataset.theme); applyTheme(); renderTheme();
+  }));
 
   function refreshBanners() {
-    $("fakeBanner").hidden = !cfg.fake();
-    $("setupBanner").hidden = !!(cfg.fake() || cfg.url());
+    ["fakeBanner", "fakeBanner2", "fakeBanner3", "fakeBanner4"].forEach((id) => { $(id).hidden = !cfg.fake(); });
+    renderMeRows();
+    if (screen === "start" && !cfg.fake() && !cfg.url()) show("setup");
   }
+
+  // ---------- 我是誰（v5.1）：從成員名單選部門 → 組 → 人；todayEvents、createEvent 多帶 memberId ----------
+  // 存在這支手機：mv_me_id（給後端）、mv_me（顯示用的姓名、部門、組）
+  let meTarget = "", setupMe = null, meDept = "", meUnit = "";
+  const meInfo = () => lsJson("mv_me", null);
+  const meLabel = (m) => m ? m.name + "（" + (m.unit || m.dept || "") + "）" : "";
+  function renderMeRows() {
+    const m = meInfo();
+    $("cfgMeText").textContent = m && cfg.me() ? meLabel(m) : "還沒選";
+    $("setupMeText").textContent = setupMe ? meLabel(setupMe) : "請選擇";
+    $("meBanner").hidden = !!cfg.me() || !(cfg.fake() || cfg.url());
+  }
+  async function openMe(target) {
+    meTarget = target;
+    $("meSearch").value = ""; $("meSheet").hidden = false;
+    const cur = target === "setup" ? setupMe : meInfo();
+    if (cur) { meDept = cur.dept; meUnit = cur.unit || DIRECT; }
+    renderMe();
+    // 第一次設定時網址和 key 還沒存：先用畫面上填的試著讀名單
+    if (target === "setup" && !cfg.fake()) cfgOverride = { url: $("setupUrl").value.trim(), key: $("setupKey").value.trim() };
+    try { await loadMembers("我是誰"); } finally { cfgOverride = null; }
+    renderMe();
+  }
+  function renderMe() {
+    if ($("meSheet").hidden) return;
+    const list = members || [];
+    const depts = deptsOf(list);
+    if (!depts.includes(meDept)) meDept = depts[0] || "";
+    chipRow($("meDepts"), depts, meDept, (d) => d, (d) => { meDept = d; meUnit = ""; renderMe(); });
+    const units = meDept ? unitsOf(meDept) : [];
+    if (!units.includes(meUnit)) meUnit = units[0] || "";
+    $("meUnits").hidden = !units.length;
+    chipRow($("meUnits"), units, meUnit, (u) => u, (u) => { meUnit = u; renderMe(); });
+    $("meDepts").hidden = !depts.length;
+    const q = $("meSearch").value.trim().toLowerCase();
+    const shown = list.filter((m) => q ? (m.name + " " + m.dept + " " + m.unit).toLowerCase().includes(q)
+      : m.dept === meDept && (!units.length || (meUnit === DIRECT ? !m.unit : m.unit === meUnit)));
+    const cur = meTarget === "setup" ? setupMe : meInfo();
+    const box = $("meList"); box.textContent = "";
+    shown.forEach((m) => {
+      const b = el("button", "row-link" + (cur && cur.id === m.id ? " sel" : ""));
+      b.type = "button"; b.dataset.id = m.id;
+      const t = el("span", "grow"); t.append(el("b", "", m.name), el("small", "", m.unit || m.dept));
+      b.append(t, svgIcon("i-check", "ico ck"));
+      b.addEventListener("click", () => pickMe(m));
+      box.append(b);
+    });
+    box.hidden = !shown.length;
+    let msg = "", cls = "warn";
+    if (!list.length) {
+      msg = memState === "loading" || memLoading ? "讀取成員名單中…" : "讀不到成員名單" + (memErr ? "（" + memErr + "）" : "") + "：先確認網址和 key";
+      cls = memState === "loading" || memLoading ? "" : "ng";
+    } else if (!shown.length) msg = q ? "找不到「" + q + "」" : "這裡沒有人";
+    $("meMsg").textContent = msg; $("meMsg").className = "msg " + cls;
+  }
+  function pickMe(m) {
+    const info = { id: m.id, name: m.name, dept: m.dept, unit: m.unit };
+    $("meSheet").hidden = true;
+    if (meTarget === "setup") { setupMe = info; $("setupMsg").textContent = ""; renderMeRows(); return; }
+    const ok = lsSet("mv_me_id", m.id) && lsSet("mv_me", JSON.stringify(info));
+    log("我是誰：" + m.name + "（" + m.id + "）" + (ok ? "" : "，但無法儲存"));
+    renderMeRows(); renderDiag();
+    events = null; selAuto = true; loadEvents("改了我是誰");
+  }
+  $("meSearch").addEventListener("input", renderMe);
+  $("meCancel").addEventListener("click", () => { $("meSheet").hidden = true; });
+  $("setupMeBtn").addEventListener("click", () => openMe("setup"));
+  $("cfgMeBtn").addEventListener("click", () => openMe("settings"));
+  $("btnMeBanner").addEventListener("click", () => { openSettings(); openMe("settings"); });
+
+  // ---------- 設定連結（v5.1）：#setup=<base64url({url,key})>，# 後面不會送到 GitHub Pages ----------
+  function b64urlEncode(s) {
+    let bin = ""; new TextEncoder().encode(s).forEach((b) => { bin += String.fromCharCode(b); });
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function b64urlDecode(s) {
+    s = s.replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) s += "=";
+    return new TextDecoder().decode(Uint8Array.from(atob(s), (c) => c.charCodeAt(0)));
+  }
+  let fromLink = false;
+  function readSetupLink() {
+    const m = /^#setup=([A-Za-z0-9_-]+)$/.exec(location.hash);
+    if (!m) return false;
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+    try {
+      const c = JSON.parse(b64urlDecode(m[1]));
+      if (!c || typeof c.url !== "string" || typeof c.key !== "string") throw new Error("內容不對");
+      $("setupUrl").value = c.url; $("setupKey").value = c.key;
+      fromLink = true;
+      log("從設定連結帶入網址和 key");
+    } catch (e) { log("設定連結讀不出來：" + e.message); $("setupMsg").textContent = "設定連結讀不出來，請重新跟 Jacky 要一次，或自己填網址和 key"; }
+    return true;
+  }
+  function renderSetup() {
+    $("setupUrlRow").hidden = fromLink; $("setupKeyRow").hidden = fromLink;
+    $("setupLinkNote").hidden = !fromLink;
+    const f = recFormat();
+    $("setupFmt").textContent = !f ? "這支手機的瀏覽器不能錄音，請改用 Safari（iPhone）或 Chrome（Android）；設定好之後也可以用「上傳錄音檔」"
+      : f === "webm" ? "這支手機錄成 webm，逐字稿能不能轉需要先測試：請先錄 30 秒測試會議" : "這支手機會錄成 m4a";
+    $("setupFmt").className = "foot-note" + (f === "m4a" ? "" : " warn");
+    renderMeRows();
+  }
+  function openShare() {
+    const url = lsGet("mv_api_url").trim(), key = lsGet("mv_upload_key").trim();
+    $("shareMsg").textContent = ""; $("shareMsg").className = "msg";
+    if (!url || !key) {
+      $("shareLink").value = "";
+      $("shareMsg").textContent = "還沒存部署網址和 key，不能產生連結"; $("shareMsg").className = "msg ng";
+    } else {
+      $("shareLink").value = location.origin + location.pathname + "?v=" + encodeURIComponent(params.get("v") || "5") +
+        "#setup=" + b64urlEncode(JSON.stringify({ url: url, key: key }));
+    }
+    $("btnCopyLink").disabled = !$("shareLink").value;
+    $("shareSheet").hidden = false;
+  }
+  $("btnShare").addEventListener("click", openShare);
+  $("shareClose").addEventListener("click", () => { $("shareSheet").hidden = true; });
+  $("btnCopyLink").addEventListener("click", async () => {
+    const t = $("shareLink").value;
+    let ok = false;
+    try { await navigator.clipboard.writeText(t); ok = true; }
+    catch (e) { try { $("shareLink").select(); ok = document.execCommand("copy"); } catch (e2) {} }
+    $("shareMsg").textContent = ok ? "已複製，貼到 LINE 私訊或 email 傳給同事" : "不能自動複製：請長按上面的連結自己複製";
+    $("shareMsg").className = "msg " + (ok ? "ok" : "warn");
+  });
+
+  // 這支手機會錄成什麼格式（不改 pickMime 的結果，只是先告訴使用者）
+  function recFormat() {
+    if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices) return "";
+    try { return MediaRecorder.isTypeSupported("audio/mp4") ? "m4a" : "webm"; } catch (e) { return "webm"; }
+  }
+  // 診斷資訊：版本、放大倍數、錄音格式、我是誰
+  function renderDiag() {
+    $("diagInfo").textContent = VERSION + "｜放大倍數 ×" + GAIN + (GAIN_Q ? "（?gain=" + GAIN_Q + (GAIN_Q === GAIN ? "" : "，超出 16–128，夾回 " + GAIN) + "）" : "（預設；?gain= 可測 16–128）") +
+      "｜錄成 " + (recFormat() || "不能錄音") + "｜我是誰 " + (cfg.me() || "沒設");
+  }
+
+  // ---------- 臨時會議：送出前確認（v5.1）----------
+  let quickPending = null;
+  function askQuick(withPeople) {
+    const raw = $("qName").value.trim();
+    if (!cleanName(raw)) { $("qErr").textContent = "請先輸入會議名稱"; $("qName").focus(); return; }
+    const ids = withPeople ? pickedIds() : [];
+    const names = ids.map((id) => (members.find((m) => m.id === id) || {}).name).filter(Boolean);
+    quickPending = { raw: raw, ids: ids, withPeople: withPeople };
+    $("qcTitle").textContent = "建立臨時會議「" + raw + "」？";
+    $("qcText").textContent = (names.length ? "與會者 " + names.length + " 人：" + (names.length > 4 ? names.slice(0, 4).join("、") + "…等 " + names.length + " 人" : names.join("、"))
+      : "不選與會者") + "。不寄邀請信；實驗模式不會加入與會者";
+    $("qcSwitch").hidden = !meeting;
+    if (meeting) $("qcSwitch").textContent = "目前這場（" + meeting.name + "）的錄音會先結束並上傳";
+    $("quickConfirm").hidden = false;
+  }
+  function quickGo() {
+    const p = quickPending;
+    if (!p) return;
+    quickPending = null;
+    $("quickConfirm").hidden = true;
+    if (p.withPeople) lsSet("mv_member_pick", JSON.stringify(p.ids));
+    $("quickSheet").hidden = true;
+    const t = { name: p.raw, quick: { memberIds: p.ids } };
+    if (meeting) switchTo(t); else startMeeting(t);
+  }
+  $("qStart").addEventListener("click", () => askQuick(true));
+  $("qNoPick").addEventListener("click", () => askQuick(false));
+  $("btnQConfirm").addEventListener("click", quickGo);
+  // 返回修改：只關確認選單，臨時會議畫面上的名稱和勾選的人都還在
+  $("btnQBack").addEventListener("click", () => { quickPending = null; $("quickConfirm").hidden = true; });
+  $("btnQuick2").addEventListener("click", () => { $("evSheet").hidden = true; openQuick(); });
+
+  // ---------- 上傳錄音檔（v5.1）：選會議 → 選檔案 → 上傳並整理；全部傳完自動送完成檔 ----------
+  const FILE_EXT = { m4a: "audio/x-m4a", mp3: "audio/mpeg", wav: "audio/wav", aac: "audio/aac", webm: "audio/webm" };
+  const FILE_MAX = 25 * 1048576;   // base64 後約 33 MB；Apps Script 單次上限約 50 MB（需要查證）
+  const FILE_LONG = 30 * 60;       // 超過 30 分鐘只提醒
+  const WD = "日一二三四五六";
+  const fs = { step: 1, date: "", events: null, evErr: "", loading: false, sel: null, manual: false, files: [], busy: false, result: "" };
+  const ymd = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  const mmss = (s) => Math.floor(s / 60) + ":" + pad(Math.round(s % 60));
+  function fileDays() {
+    const out = [];
+    for (let i = 0; i <= 7; i++) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      out.push({ v: ymd(d), label: i === 0 ? "今天" : i === 1 ? "昨天" : (d.getMonth() + 1) + "/" + d.getDate() + "（" + WD[d.getDay()] + "）" });
+    }
+    return out;
+  }
+  function openFile() {
+    Object.assign(fs, { step: 1, date: today(), events: null, evErr: "", sel: null, manual: false, files: [], busy: false, result: "" });
+    $("fileMName").value = ""; $("fileMDate").value = today(); $("fileMTime").value = "";
+    $("fileMDate").max = today(); $("fileMDate").min = fileDays()[7].v;
+    show("file"); renderFile(); loadFileEvents();
+  }
+  async function loadFileEvents() {
+    const date = fs.date;
+    fs.loading = true; fs.events = null; fs.evErr = ""; renderFile();
+    const body = { action: "todayEvents" };
+    if (date !== today()) body.date = date;
+    if (cfg.me()) body.memberId = cfg.me();
+    const v = await request(body, EVENT_RETRY_WAIT, null, "讀取 " + date + " 的會議");
+    if (fs.date !== date) return; // 中途換了日期
+    fs.loading = false;
+    if (v.ok) fs.events = v.r.events.map((e) => ({ id: String(e.id), title: String(e.title || "（沒有標題）"), start: Date.parse(e.start), end: Date.parse(e.end),
+      guests: typeof e.guests === "number" ? e.guests : null, mine: e.mine === true })).filter((e) => e.id && isFinite(e.start) && isFinite(e.end));
+    else fs.evErr = v.reject || v.fail;
+    renderFile();
+  }
+  function fileMeeting() {
+    if (fs.manual) {
+      const name = $("fileMName").value.trim(), d = $("fileMDate").value, t = $("fileMTime").value;
+      if (!cleanName(name) || !/^\d{4}-\d{2}-\d{2}$/.test(d) || !/^\d{2}:\d{2}$/.test(t)) return null;
+      return { name: name, start: new Date(d + "T" + t + ":00"), end: null, eventId: "" };
+    }
+    return fs.sel ? { name: fs.sel.title, start: new Date(fs.sel.start), end: new Date(fs.sel.end), eventId: fs.sel.id } : null;
+  }
+  function checkFile(f) {
+    f.err = !FILE_EXT[f.ext] ? "這個格式不支援，請轉成 m4a 或 mp3" : f.size > FILE_MAX ? "檔案太大，請先剪成 20 分鐘以內的幾段（語音備忘錄可以剪）" : "";
+    f.warn = !f.err && f.dur > FILE_LONG ? "超過 30 分鐘的檔，逐字稿可能不完整，建議剪成 20 分鐘一段" : "";
+  }
+  // 長度：用 <audio> 讀 metadata（讀不到就不顯示，不擋）
+  function readDuration(f) {
+    const url = URL.createObjectURL(f.file);
+    const a = new Audio();
+    const done = (d) => { if (f.dur !== undefined) return; f.dur = isFinite(d) && d > 0 ? d : null; URL.revokeObjectURL(url); checkFile(f); renderFile(); };
+    a.preload = "metadata";
+    a.addEventListener("loadedmetadata", () => done(a.duration));
+    a.addEventListener("error", () => done(null));
+    setTimeout(() => done(null), 8000);
+    a.src = url;
+  }
+  function addFiles(list) {
+    const add = Array.from(list).map((file) => ({ file: file, name: file.name, size: file.size,
+      ext: ((/\.([a-z0-9]+)$/i.exec(file.name) || [])[1] || "").toLowerCase(), dur: undefined, err: "", warn: "", done: false, retried: false, st: "" }));
+    add.forEach(checkFile);
+    fs.files = fs.files.concat(add).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    add.forEach(readDuration);
+    log("選了 " + add.length + " 個錄音檔：" + add.map((f) => f.name + "（" + mb(f.size) + "）").join("、"));
+    renderFile();
+  }
+  function moveFile(i, d) {
+    const j = i + d;
+    if (j < 0 || j >= fs.files.length) return;
+    const t = fs.files[i]; fs.files[i] = fs.files[j]; fs.files[j] = t;
+    renderFile();
+  }
+  function iconBtn(icon, label, fn, disabled) {
+    const b = el("button", "icon-btn sm"); b.type = "button"; b.setAttribute("aria-label", label); b.disabled = !!disabled;
+    b.append(svgIcon(icon)); b.addEventListener("click", fn);
+    return b;
+  }
+  const filePrefix = (m) => prefixOf(m.start, cleanName(m.name) || "會議");
+  const fileSegName = (m, f, i) => filePrefix(m) + "_" + pad(i + 1) + "." + f.ext;
+  function renderFile() {
+    if (screen !== "file") return;
+    const st = fs.step;
+    $("fileTitle").textContent = ["", "選會議", "選檔案", fs.result === "done" ? "上傳完成" : "確認上傳"][st];
+    $("fileBack").textContent = st === 1 || fs.result ? (fs.result ? "首頁" : "取消") : "上一步";
+    $("fileBack").disabled = fs.busy;
+    $("fileStep1").hidden = st !== 1; $("fileStep2").hidden = st !== 2; $("fileStep3").hidden = st !== 3;
+    let next = "下一步", can = false;
+    if (st === 1) {
+      chipRow($("fileDates"), fileDays().map((d) => d.v), fs.date, (v) => fileDays().find((d) => d.v === v).label,
+        (v) => { fs.date = v; fs.sel = null; loadFileEvents(); });
+      const box = $("fileEvList"); box.textContent = "";
+      const now = Date.now();
+      (fs.events || []).slice().sort((a, b) => (b.mine - a.mine) || a.start - b.start).forEach((e) => {
+        box.append(evButton(e, evClass(e, now), !fs.manual && fs.sel && fs.sel.id === e.id, (x) => { fs.sel = x; fs.manual = false; renderFile(); }));
+      });
+      box.hidden = !box.childNodes.length;
+      $("fileEvMsg").textContent = fs.loading ? "讀取會議…" : fs.evErr ? "讀不到這天的會議（" + fs.evErr + "）：可以用下面的「沒有在日曆上」" :
+        fs.events && !fs.events.length ? "這天日曆上沒有會議：用下面的「沒有在日曆上」" : "";
+      $("fileEvMsg").className = "msg" + (fs.evErr ? " warn" : "");
+      $("fileManualBtn").classList.toggle("sel", fs.manual);
+      $("fileManual").hidden = !fs.manual;
+      can = !!fileMeeting();
+    } else if (st === 2) {
+      const m = fileMeeting();
+      $("fileFor").textContent = m.name + "｜" + ymd(m.start) + " " + HM(m.start);
+      const box = $("fileList"); box.textContent = "";
+      fs.files.forEach((f, i) => {
+        const row = el("div", "item file");
+        const t = el("span", "grow");
+        t.append(el("b", "", pad(i + 1) + "　" + f.name),
+          el("small", "", (f.dur === undefined ? "讀取長度…" : f.dur ? "長度 " + mmss(f.dur) : "長度讀不到") + "・" + mb(f.size)));
+        if (f.err) t.append(el("small", "ng", f.err));
+        else if (f.warn) t.append(el("small", "warn", f.warn));
+        row.append(t, iconBtn("i-up", "往上", () => moveFile(i, -1), i === 0), iconBtn("i-down", "往下", () => moveFile(i, 1), i === fs.files.length - 1),
+          iconBtn("i-x", "移除", () => { fs.files.splice(i, 1); renderFile(); }));
+        box.append(row);
+      });
+      box.hidden = !fs.files.length;
+      const bad = fs.files.filter((f) => f.err).length;
+      $("fileMsg").textContent = !fs.files.length ? "還沒選檔案" : bad ? "有 " + bad + " 個檔案不能上傳：移除後才能繼續" : "";
+      $("fileMsg").className = "msg" + (bad ? " ng" : "");
+      can = fs.files.length > 0 && !bad;
+    } else {
+      const m = fileMeeting();
+      const total = fs.files.reduce((s, f) => s + (f.dur || 0), 0);
+      const sum = $("fileSummary"); sum.textContent = "";
+      sum.append(el("p", "", "會議：" + m.name), el("p", "", "開始：" + ymd(m.start) + " " + HM(m.start) + (m.eventId ? "（日曆）" : "（沒有在日曆上）")),
+        el("p", "", fs.files.length + " 段" + (total ? "，共 " + mmss(total) : "") + "；全部傳完會自動整理成會議記錄"));
+      sum.hidden = fs.result === "done";
+      const prog = $("fileProg"); prog.textContent = "";
+      fs.files.forEach((f, i) => {
+        const row = el("div", "item");
+        const t = el("span", "grow"); t.append(el("b", "", fileSegName(m, f, i)), el("small", "", f.name));
+        row.append(t, el("span", "s " + (f.st === "已上傳" ? "ok" : f.st === "失敗" ? "ng" : "warn"), f.st || "等待"));
+        prog.append(row);
+      });
+      prog.hidden = fs.result === "done";
+      $("fileDone").hidden = fs.result !== "done";
+      next = fs.result === "done" ? "回到首頁" : fs.result === "fail" ? "重新上傳" : fs.result === "dup" ? "回到首頁" : fs.busy ? "上傳中…" : "上傳並整理";
+      can = !fs.busy;
+    }
+    $("fileNext").textContent = next;
+    $("fileNext").disabled = !can;
+  }
+  async function uploadFiles() {
+    const m = fileMeeting();
+    fs.busy = true; fs.result = ""; $("fileUpMsg").textContent = ""; renderFile();
+    const prefix = filePrefix(m);
+    log("上傳錄音檔：" + prefix + "，" + fs.files.length + " 段");
+    for (let i = 0; i < fs.files.length; i++) {
+      const f = fs.files[i];
+      if (f.done) continue;
+      f.st = "上傳中"; renderFile();
+      let body = null, v;
+      try { body = { action: "upload", name: fileSegName(m, f, i), mimeType: f.file.type || FILE_EXT[f.ext], data: await toBase64(f.file) }; }
+      catch (e) { v = { fail: "讀取失敗：" + e.message }; }
+      if (body) v = await request(body, RETRY_WAIT, (k, n) => { f.retried = true; f.st = "重試中（" + k + "/" + n + "）"; renderFile(); }, body.name);
+      if (v.ok && i === 0 && v.r.duplicate && !f.retried) {
+        // 第 1 段已經在雲端硬碟：這場已經錄過（或傳過），停下來，不送完成檔
+        f.st = "已經有了"; fs.busy = false; fs.result = "dup";
+        $("fileUpMsg").textContent = "這場已經有錄音了，不用再上傳"; $("fileUpMsg").className = "msg warn";
+        log("上傳錄音檔停止：" + body.name + " 已經存在，不送完成檔");
+        renderFile(); return;
+      }
+      if (!v.ok) {
+        f.st = "失敗"; fs.busy = false; fs.result = "fail";
+        $("fileUpMsg").textContent = "第 " + (i + 1) + " 段上傳失敗（" + (v.reject || v.fail) + "）：按「重新上傳」會從這段接著傳"; $("fileUpMsg").className = "msg ng";
+        log("上傳錄音檔失敗：" + body.name + "（" + VERSION + "：" + (v.reject || v.fail) + "）");
+        renderFile(); return;
+      }
+      f.done = true; f.st = "已上傳"; log("上傳成功：" + body.name); renderFile();
+    }
+    const total = fs.files.reduce((s, f) => s + (f.dur || 0), 0);
+    const content = { meeting: m.name, start: m.start.toISOString(), end: (m.end || new Date(m.start.getTime() + total * 1000)).toISOString(),
+      endReason: "file", attendees: [], segments: fs.files.length, source: "file" };
+    if (m.eventId) content.calendarEventId = m.eventId;
+    const v = await request({ action: "complete", name: prefix + "_完成.json", content: content }, RETRY_WAIT, null, prefix + "_完成.json");
+    fs.busy = false;
+    if (!v.ok) {
+      fs.result = "fail";
+      $("fileUpMsg").textContent = "錄音都傳好了，但完成檔沒送出（" + (v.reject || v.fail) + "）：按「重新上傳」再送一次"; $("fileUpMsg").className = "msg ng";
+      log("上傳錄音檔：完成檔失敗（" + (v.reject || v.fail) + "）");
+      renderFile(); return;
+    }
+    fs.result = "done";
+    $("fileDoneTitle").textContent = "已上傳 " + fs.files.length + " 段";
+    $("fileDoneNote").textContent = "約 20–30 分鐘後，會議記錄會出現在「硬體組會議記錄2026」";
+    $("fileUpMsg").textContent = "";
+    log("上傳錄音檔完成：" + prefix + "，" + fs.files.length + " 段＋完成檔");
+    renderFile();
+  }
+  $("btnFile").addEventListener("click", openFile);
+  $("btnPickFiles").addEventListener("click", () => $("fileInput").click());
+  $("fileInput").addEventListener("change", () => { addFiles($("fileInput").files); $("fileInput").value = ""; });
+  $("fileManualBtn").addEventListener("click", () => { fs.manual = !fs.manual; if (fs.manual) fs.sel = null; renderFile(); });
+  ["fileMName", "fileMDate", "fileMTime"].forEach((id) => $(id).addEventListener("input", renderFile));
+  $("fileNext").addEventListener("click", () => {
+    if (fs.step < 3) { fs.step++; renderFile(); return; }
+    if (fs.result === "done" || fs.result === "dup") { goHome(); return; }
+    uploadFiles();
+  });
+  $("fileBack").addEventListener("click", () => {
+    if (fs.busy) return;
+    if (fs.step === 1 || fs.result) { goHome(); return; }
+    fs.step--; renderFile();
+  });
+  window.addEventListener("beforeunload", (e) => { if (fs.busy) { e.preventDefault(); e.returnValue = ""; } });
 
   $("btnStart").addEventListener("click", () => {
     const raw = $("meetingName").value.trim();
@@ -1535,31 +2293,35 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     else if (manualAllowed()) startMeeting({ name: raw });
   });
   $("meetingName").addEventListener("input", updateStartBtn);
-  $("btnEvRefresh").addEventListener("click", () => loadEvents("🔄"));
-  $("btnEvRefresh2").addEventListener("click", () => loadEvents("🔄"));
+  $("btnEvRefresh").addEventListener("click", () => loadEvents("重新讀取"));
+  $("btnEvRefresh2").addEventListener("click", () => loadEvents("重新讀取"));
+
+  $("btnHome").addEventListener("click", () => { if (graceM) finishGrace(); $("autoEndBanner").hidden = true; goHome(); });
+  $("btnTipsOk").addEventListener("click", () => { lsSet("mv_tips_seen", "1"); $("tipsCard").hidden = true; });
 
   // ---------- 開頁 ----------
   $("ver").textContent = VERSION;
-  if (/\bLine\//.test(navigator.userAgent)) {
-    $("noteLine").textContent = "⚠ 現在是從 LINE 開的：請改用 Safari 或 Chrome 開這個網址";
-    $("notes").classList.add("banner", "ng");
-  }
+  applyTheme();
+  $("lineBanner").hidden = !/\bLine\//.test(navigator.userAgent);
+  $("tipsCard").hidden = !!lsGet("mv_tips_seen"); // 開始前的提醒只顯示一次，之後在設定頁的說明
+  setupMe = meInfo();
+  const linked = readSetupLink(); // 用設定連結打開：網址和 key 已經填好，只剩選「我是誰」
+  show(linked ? "setup" : "start");
   refreshBanners();
+  renderDiag();
+  if (GAIN_Q) log("測試：放大倍數 ?gain=" + GAIN_Q + (GAIN_Q === GAIN ? "" : "（超出 16–128，夾回 ×" + GAIN + "）"));
   if (cfg.fake()) log("假上傳模式（" + cfg.fake() + "）");
-  if (SEG_MS !== 600000) log("測試：每段 " + SEG_MS / 1000 + " 秒");
+  if (SEG_MS !== 1200000) log("測試：每段 " + SEG_MS / 1000 + " 秒");
 
-  // 要求持久儲存：沒有的話瀏覽器空間不夠時可能清掉暫存（提醒只顯示一次）
+  // 要求持久儲存：沒有的話瀏覽器空間不夠時可能清掉暫存（設定頁說明）
   (async function askPersist() {
     let ok = false;
     try {
       const s = navigator.storage;
       ok = !!(s && s.persist && ((s.persisted && await s.persisted()) || await s.persist()));
       log("持久儲存：" + (!s || !s.persist ? "不支援" : ok ? "已允許" : "被拒絕"));
-    } catch (e) { log("⚠ 持久儲存失敗：" + e.name); }
-    if (!ok && !lsGet("mv_persist_warned")) {
-      lsSet("mv_persist_warned", "1");
-      $("persistBanner").hidden = false;
-    }
+    } catch (e) { log("持久儲存失敗：" + e.name); }
+    $("persistNote").hidden = ok; // 只是說明，放在設定頁
   })();
 
   // 待重送：上次沒傳完的段落和完成檔；會議中途關掉的，完成檔改成等待上傳；開頁就自動再試
@@ -1575,7 +2337,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
               r.content.endReason = "recovered";
             }
             await store.put(r);
-            log("⚠ 上次的會議沒有正常結束：" + r.prefix + "（已存的 " + r.content.segments + " 段會照常上傳）");
+            log("上次的會議沒有正常結束：" + r.prefix + "（已存的 " + r.content.segments + " 段會照常上傳）");
           } else {
             await store.del(r.name); // 一段都沒存到：後端不收 segments 0 的完成檔
           }
