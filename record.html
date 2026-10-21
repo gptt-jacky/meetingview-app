@@ -317,7 +317,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     // 假上傳（測試用）：網址 ?fake=…（每次重新讀，測試中可以換模式）或 ⚙️ 的開關；模式見 fakeFetch()
     fake: () => new URLSearchParams(location.search).get("fake") || (lsGet("mv_fake_upload") === "1" ? "1" : "")
   };
-  const SEG_MS = (num("seg") || 600) * 1000;          // ?seg=秒數：測試用，縮短每段長度
+  const SEG_MS = (num("seg") || 1200) * 1000;         // ?seg=秒數：測試用，縮短每段長度
   const TIMEOUT_S = num("timeout");                   // ?timeout=秒數：測試用，縮短逾時
   const AUTORETRY_MS = (num("autoretry") || 120) * 1000; // ?autoretry=秒數：測試用，縮短自動再試間隔
   const GRACE_MS = (num("grace") || 120) * 1000;      // 結束後可以復原的時間（?grace=秒數）
@@ -330,7 +330,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
   const RETRY_WAIT = [2, 5, 10];   // 上傳：失敗後等幾秒再試（共 3 次）
   const EVENT_RETRY_WAIT = [2, 5]; // 建日曆、讀行事曆、讀名單：再試 2 次
   const LOW_SPACE_MB = 200;        // 1 小時約 30 MB（推算）
-  const GAIN = 48;
+  const GAIN = Math.min(Math.max(num("gain") || 64, 16), 128);  // 10/21 Jacky：要更大聲，預設 48→64；?gain= 可試 16–128
   const BITRATE = 64000;
 
   // ---------- 紀錄 ----------
@@ -1232,7 +1232,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px
     const m = newMeeting(t, quick);
     await saveComplete(m);
     meeting = m; lastTouch = Date.now();
-    log("開始錄音：" + m.prefix + "（" + VERSION + "，每段 " + SEG_MS / 1000 + " 秒" + (m.eventId ? "，日曆 " + HM(m.evStart) + "–" + HM(m.evEnd) : m.quick ? "，臨時會議" : "，沒有日曆") + "）");
+    log("開始錄音：" + m.prefix + "（" + VERSION + "，每段 " + SEG_MS / 1000 + " 秒，放大 ×" + GAIN + (m.eventId ? "，日曆 " + HM(m.evStart) + "–" + HM(m.evEnd) : m.quick ? "，臨時會議" : "，沒有日曆") + "）");
     startSegment(m);
     keepAwake();
     showRecUI();
