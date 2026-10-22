@@ -15,6 +15,7 @@
      v5.3：10/22 第一次正式會議實測後修訂：開始前確認 AudioContext 在跑（不然重建）、開始後 2 秒內查有沒有聲音（沒有就自動重建，
            還是沒有就紅色提示重新整理）、偵測到耳機提醒、取消這場（不產生會議記錄，送後端 cancel）、清單標題「硬體組今天的會議」、
            拿掉「我是誰」（2 場以上同時進行時不自動預選）、診斷資訊加麥克風名稱／聲道數／AudioContext 狀態
+     v5.3.1：只改文字：耳機提醒改成「可能正在用耳機」（判斷規則不變）、診斷資訊「（可能是耳機）」、範例會議名稱不放專案名稱
      放在公開的 GitHub Pages：不能寫死任何網址、key、email、會議內容
      最後更新: 2026/10/22 -->
 <html lang="zh-Hant-TW">
@@ -335,7 +336,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     <div id="stripSlotRec"></div>
     <div class="strips">
       <div class="strip loud ng" id="silentBanner" role="alert" hidden><span>錄不到聲音，請重新整理頁面</span><button class="btn small" id="btnReload">重新整理</button></div>
-      <div class="strip loud" id="headsetBanner" role="alert" hidden><span>偵測到耳機：請拿下耳機，用手機麥克風錄</span><button class="btn small" id="btnHeadsetOk">我知道了</button></div>
+      <div class="strip loud" id="headsetBanner" role="alert" hidden><span>可能正在用耳機：如果有戴，請拿下耳機，用手機麥克風錄</span><button class="btn small" id="btnHeadsetOk">我知道了</button></div>
       <div class="strip" id="endBanner" hidden><span id="endText"></span>
         <div class="bbtns">
           <button class="btn small danger" id="btnEndB">結束會議</button>
@@ -473,7 +474,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 <div class="sheet" id="quickSheet" hidden>
   <div class="panel">
     <div class="panel-head"><button class="text-btn" id="qCancel">取消</button><h2 style="margin:0 auto">臨時會議</h2><span style="width:52px"></span></div>
-    <div class="list"><div class="item"><input type="text" id="qName" maxlength="60" autocomplete="off" placeholder="會議名稱（必填），例如：SUT 討論"></div></div>
+    <div class="list"><div class="item"><input type="text" id="qName" maxlength="60" autocomplete="off" placeholder="會議名稱（必填），例如：週會"></div></div>
     <div class="hrow"><span>與會人員</span><span class="warn" id="qCount">已選 0 人</span></div>
     <p class="foot-note" id="qSelfNote" style="margin:-6px 4px 0">記得勾自己，會後才收得到會議記錄</p>
     <input type="search" id="qSearch" placeholder="搜尋姓名、部門、組" autocomplete="off">
@@ -582,7 +583,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 <script>
 (function () {
   "use strict";
-  const VERSION = "record v5.3（10/22）";
+  const VERSION = "record v5.3.1（10/22）";
   const $ = (id) => document.getElementById(id);
   const pad = (n) => String(n).padStart(2, "0");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -740,7 +741,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
       ? [{ id: "fake-ev-now2", title: "範例：電源板評審", start: iso(FAKE_T0 - 10 * MIN), end: iso(FAKE_T0 + 50 * MIN), guests: 5 }] : [];
     return two.concat([
       { id: "fake-ev-ended", title: "範例：晨會", start: iso(FAKE_T0 - 120 * MIN), end: iso(FAKE_T0 - 60 * MIN), guests: 3 },
-      { id: "fake-ev-now", title: "範例：SUT 週會", start: iso(FAKE_T0 - 20 * MIN), end: iso(curEnd), guests: 6 },
+      { id: "fake-ev-now", title: "範例：硬體週會", start: iso(FAKE_T0 - 20 * MIN), end: iso(curEnd), guests: 6 },
       { id: "fake-ev-next", title: "範例：硬體設計審查", start: iso(nextStart), end: iso(nextStart + 60 * MIN), guests: 4 },
       { id: "fake-ev-later", title: "範例：二〇二六年第四季硬體部跨部門專案進度檢討與下一階段規劃討論（含供應商與外部顧問）",
         start: iso(FAKE_T0 + 180 * MIN), end: iso(FAKE_T0 + 240 * MIN), guests: 12 }
@@ -1590,7 +1591,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   function checkHeadset() {
     const on = isHeadset(micInfo) && headsetOk !== micInfo.label;
     if (on && $("headsetBanner").hidden) {
-      log("偵測到耳機：" + micInfo.label + "（" + chText(micInfo) + "），提醒拿下耳機");
+      log("可能是耳機：" + micInfo.label + "（" + chText(micInfo) + "），提醒拿下耳機");
       if (navigator.vibrate) navigator.vibrate(300);
     }
     $("headsetBanner").hidden = !on;
@@ -2303,7 +2304,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
       "現在：" + ymd(d) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()),
       "放大倍數：" + gainText(),
       "錄音格式：" + (recFormat() || "不能錄音") + (mimeType ? "（這次錄成 " + mimeType + "）" : ""),
-      "麥克風：" + micName() + (micInfo.label && isHeadset(micInfo) ? "（看起來是耳機）" : ""),
+      "麥克風：" + micName() + (micInfo.label && isHeadset(micInfo) ? "（可能是耳機）" : ""),
       "聲道數：" + micCh(),
       "AudioContext：" + ctxState(),
       "每段：" + SEG_MS / 1000 + " 秒" + (cfg.fake() ? "｜假上傳 " + cfg.fake() : ""),
