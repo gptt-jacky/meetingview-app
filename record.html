@@ -18,8 +18,10 @@
      v5.3.1：只改文字：耳機提醒改成「可能正在用耳機」（判斷規則不變）、診斷資訊「（可能是耳機）」、範例會議名稱不放專案名稱
      v5.4：使用者只看得到他在意的事：首頁「最近的錄音」（每場傳上去了沒、重送）、重新讀取會轉＋toast、設定頁只留連線／分享／診斷資訊
            （拿掉說明、外觀、進階網址，一律跟手機亮暗）、完成畫面進度只算錄音段數、上傳錄音檔先選檔再依檔案時間猜是哪一場
+     v5.5：錄錯場的機會更小、音量自動調（10/27 iPhone 試用回饋）：拿掉分享給同事、錄音中不能切換會議（只能結束這場）、
+           開始時間和會議時間差超過 10 分鐘先確認、右上角按鈕往下移離開 iOS 霧化區、放大倍數改成自動調整（×16–×128，?gain= 固定）
      放在公開的 GitHub Pages：不能寫死任何網址、key、email、會議內容
-     最後更新: 2026/10/22 -->
+     最後更新: 2026/10/27 -->
 <html lang="zh-Hant-TW">
 <head>
 <meta charset="utf-8">
@@ -67,7 +69,7 @@ body {
 .screen > .wrap { width: 100%; }
 .body { flex: 1 0 auto; display: grid; gap: 16px; align-content: start; padding-bottom: 24px; }
 .body > * { min-width: 0; }
-.nav { display: flex; align-items: center; justify-content: flex-end; gap: 4px; min-height: 44px; padding-top: 6px; }
+.nav { display: flex; align-items: center; justify-content: flex-end; gap: 4px; min-height: 44px; padding-top: 20px; } /* v5.5：6 → 20px，按鈕離開 iOS 狀態列下方的霧化區 */
 .nav .left { margin-right: auto; color: var(--muted); font-size: 15px; }
 .icon-btn { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 22px; background: transparent; color: var(--blue); cursor: pointer; padding: 0; }
 .icon-btn:active { background: var(--fill); }
@@ -219,7 +221,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 #fileProg .s { font-size: 14px; font-weight: 600; white-space: nowrap; }
 #fileManual input { background: transparent; padding: 4px 0; border-radius: 0; }
 
-/* 從下方出來的畫面（臨時會議、切換會議、結束確認） */
+/* 從下方出來的畫面（臨時會議、結束確認、時間差確認） */
 .sheet { position: fixed; inset: 0; z-index: 20; background: var(--dim); display: flex; align-items: flex-end; justify-content: center; }
 .sheet > .panel { width: min(560px, 100%); max-height: calc(100vh - 40px - env(safe-area-inset-top)); overflow-y: auto; background: var(--bg);
   border-radius: 14px 14px 0 0; padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); display: grid; gap: 12px; }
@@ -354,7 +356,6 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
         <div class="bbtns">
           <button class="btn small danger" id="btnEndB">結束會議</button>
           <button class="btn small" id="btnExtend">延長 15 分鐘</button>
-          <button class="btn small primary" id="btnSwitchB" hidden></button>
         </div></div>
       <div class="strip ng" id="stoppedBanner" hidden><span id="stoppedText">錄音停了（可能切過 App 或鎖過螢幕）</span><button class="btn small primary" id="btnResume">繼續錄音</button></div>
       <div class="strip" id="lowBanner" hidden><span>太小聲，手機靠近一點</span></div>
@@ -370,14 +371,10 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     <div class="meter" aria-label="音量"><div id="level"></div></div>
     <div class="small-muted" id="segInfo" hidden></div>
     <div class="small-muted mono" id="dbText" hidden>平均 -∞ dBFS</div>
-    <div id="nextBox" hidden>
-      <p class="cap">下一場</p>
-      <div class="list"><div class="item"><span class="grow" id="nextText"></span><button class="btn small primary" id="btnSwitchNext">切換到這場</button></div></div>
-    </div>
   </div>
   <div class="bar"><div class="wrap">
+    <!-- v5.5：錄音中只能結束這場；要錄下一場先結束、回首頁再選 -->
     <button class="btn danger" id="btnEnd">結束會議</button>
-    <div class="row-btns"><button class="text-btn" id="btnOther">選其他會議</button></div>
   </div></div>
 </section>
 
@@ -420,7 +417,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   <div class="wrap body">
     <div class="nav"><button class="text-btn" id="btnClose" style="font-weight:600">完成</button></div>
     <h1>設定</h1>
-    <!-- v5.4：只留 3 塊（連線、分享給同事、診斷資訊）；說明、外觀、進階網址拿掉 -->
+    <!-- v5.4 拿掉說明、外觀、進階網址；v5.5 拿掉分享給同事（Jacky 自己傳 key），只留連線、診斷資訊 -->
     <div id="cfgConnBox">
       <p class="cap">連線</p>
       <div class="list">
@@ -434,9 +431,6 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
         </div>
       </div>
       <p class="foot-note" id="cfgAskNote" hidden>還沒設定：請向 Jacky 要設定連結，用那條連結打開就會自動填好。</p>
-    </div>
-    <div class="list" id="cfgShareBox">
-      <button class="row-link" type="button" id="btnShare"><span class="grow"><b>分享給同事</b><small>產生設定連結，同事打開就能用</small></span><svg class="ico chev"><use href="#i-chevron"/></svg></button>
     </div>
     <div id="cfgDiagBox">
       <p class="cap">診斷資訊</p>
@@ -464,18 +458,6 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     <div class="ver" id="ver"></div>
   </div>
 </section>
-
-<div class="sheet" id="evSheet" hidden>
-  <div class="panel">
-    <div class="panel-head"><h2>切換到其他會議</h2>
-      <button class="icon-btn" type="button" id="btnEvRefresh2" aria-label="重新讀取行事曆"><svg class="ico"><use href="#i-refresh"/></svg></button>
-      <button class="text-btn" id="btnEvSheetClose">取消</button></div>
-    <p class="msg" id="evSheetMsg"></p>
-    <div class="list" id="evSheetList"></div>
-    <p class="foot-note" style="margin-top:-6px">私人會議不會出現，要錄請用臨時會議</p>
-    <div class="list"><button class="row-link" type="button" id="btnQuick2"><span class="grow"><b>臨時會議</b><small>沒有在日曆上的會議</small></span><svg class="ico chev"><use href="#i-chevron"/></svg></button></div>
-  </div>
-</div>
 
 <div class="sheet" id="quickSheet" hidden>
   <div class="panel">
@@ -554,43 +536,31 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   <div class="bar"><div class="wrap"><button class="btn primary" id="fileNext" disabled>下一步</button></div></div>
 </section>
 
-<!-- 分享給同事：設定連結 -->
-<div class="sheet" id="shareSheet" hidden>
-  <div class="panel">
-    <div class="panel-head"><h2>分享給同事</h2><button class="text-btn" id="shareClose" style="font-weight:600">完成</button></div>
-    <p style="margin:0 4px;font-size:15px">同事用這條連結打開，網址和 key 會自動填好，打開就能用。</p>
-    <div class="list"><div class="item"><input type="text" id="shareLink" readonly></div></div>
-    <button class="btn primary" id="btnCopyLink">複製連結</button>
-    <p class="msg" id="shareMsg"></p>
-    <div class="strip"><span>連結裡含有上傳 key，只傳給硬體組；外流時請 Jacky 換 key。</span></div>
-  </div>
-</div>
-
 <!-- 臨時會議送出前確認 -->
 <div class="sheet action" id="quickConfirm" hidden>
   <div class="panel action">
     <div class="group">
       <div class="t"><b id="qcTitle" style="color:var(--fg);font-size:15px"></b><span id="qcText" style="display:block;margin-top:4px"></span><span class="qc-out" id="qcOut" hidden></span>
-        <span id="qcNote" style="display:block;margin-top:6px"></span><span id="qcSwitch" style="display:block;margin-top:4px" hidden></span></div>
+        <span id="qcNote" style="display:block;margin-top:6px"></span></div>
       <button class="bold" id="btnQConfirm">建立並開始錄音</button></div>
     <div class="group"><button id="btnQBack">返回修改</button></div>
   </div>
 </div>
 
-<!-- 切換會議前確認（v5.2：切換後不能復原） -->
-<div class="sheet action" id="switchConfirm" hidden>
+<!-- 開始時間和會議時間差超過 10 分鐘：先確認是不是這場（v5.5） -->
+<div class="sheet action" id="lateConfirm" hidden>
   <div class="panel action">
     <div class="group">
-      <div class="t"><b id="swTitle" style="color:var(--fg);font-size:15px"></b><span id="swText" style="display:block;margin-top:4px"></span></div>
-      <button class="bold" id="btnSwConfirm">切換並開始錄音</button></div>
-    <div class="group"><button id="btnSwBack">取消</button></div>
+      <div class="t"><b id="lateTitle" style="color:var(--fg);font-size:15px"></b><span id="lateText" style="display:block;margin-top:4px"></span></div>
+      <button class="bold" id="btnLateGo">開始錄音</button></div>
+    <div class="group"><button id="btnLateBack">取消</button></div>
   </div>
 </div>
 
 <script>
 (function () {
   "use strict";
-  const VERSION = "record v5.4（10/22）";
+  const VERSION = "record v5.5（10/27）";
   const $ = (id) => document.getElementById(id);
   const pad = (n) => String(n).padStart(2, "0");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -637,8 +607,8 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   const RETRY_WAIT = [2, 5, 10];   // 上傳：失敗後等幾秒再試（共 3 次）
   const EVENT_RETRY_WAIT = [2, 5]; // 建日曆、讀行事曆、讀名單：再試 2 次
   const LOW_SPACE_MB = 200;        // 1 小時約 30 MB（推算）
-  const GAIN_Q = num("gain");                         // ?gain=倍數：錄音放大倍數（16–128，超出範圍夾回）
-  const GAIN = Math.min(Math.max(GAIN_Q || 64, 16), 128); // 預設 64（10/21 Jacky：1 公尺外講話要更大聲；和已發佈的 v4 一致）
+  const GAIN_Q = num("gain");                         // ?gain=倍數：固定放大倍數、不自動調（測試用；16–128，超出範圍夾回）
+  const GAIN = Math.min(Math.max(GAIN_Q || 64, 16), 128); // 每場起始倍數 64（10/21 Jacky：1 公尺外講話要更大聲）；v5.5 起自動調整
   const BITRATE = 64000;
   const SIGNAL_MS = 2000;                             // 開始錄音後多久檢查有沒有聲音（沒有就重建一次，再 2 秒還沒有就紅色提示）
   // ?fakemic=（只在 ?fake= 時有效）：headset 模擬藍牙耳機（雙聲道＋耳機名稱）｜silent 麥克風沒有聲音（重建也一樣）
@@ -736,6 +706,8 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     return FAKE_KIND[action] ? (m[FAKE_KIND[action]] || "1") : m.base;
   }
   const FAKE_T0 = Date.now(), FAKE_END = num("fakeend");
+  // ?fakestart=分鐘：「硬體週會」的開始時間＝開頁時間＋N 分鐘（負數＝已經開始；預設 -5，測 v5.5 時間差確認用）
+  const FAKE_START = params.has("fakestart") && isFinite(Number(params.get("fakestart"))) ? Number(params.get("fakestart")) : -5;
   const fakeDays = (date) => Math.round((Date.parse(today() + "T12:00:00") - Date.parse(date + "T12:00:00")) / 86400000);
   // date：前幾天的範例會議＝今天的範例整天往前移（id 加 fake-dN-）
   function fakeEvents(date) {
@@ -746,10 +718,10 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     const curEnd = FAKE_END ? FAKE_T0 + FAKE_END * 1000 : FAKE_T0 + 40 * MIN;
     const nextStart = FAKE_END ? curEnd + 5 * MIN : FAKE_T0 + 20 * MIN;
     const two = fakeMode("todayEvents") === "two"
-      ? [{ id: "fake-ev-now2", title: "範例：電源板評審", start: iso(FAKE_T0 - 10 * MIN), end: iso(FAKE_T0 + 50 * MIN), guests: 5 }] : [];
+      ? [{ id: "fake-ev-now2", title: "範例：電源板評審", start: iso(FAKE_T0 - 8 * MIN), end: iso(FAKE_T0 + 50 * MIN), guests: 5 }] : [];
     return two.concat([
       { id: "fake-ev-ended", title: "範例：晨會", start: iso(FAKE_T0 - 120 * MIN), end: iso(FAKE_T0 - 60 * MIN), guests: 3 },
-      { id: "fake-ev-now", title: "範例：硬體週會", start: iso(FAKE_T0 - 20 * MIN), end: iso(curEnd), guests: 6 },
+      { id: "fake-ev-now", title: "範例：硬體週會", start: iso(FAKE_T0 + FAKE_START * MIN), end: iso(FAKE_END ? curEnd : Math.max(curEnd, FAKE_T0 + (FAKE_START + 30) * MIN)), guests: 6 },
       { id: "fake-ev-next", title: "範例：硬體設計審查", start: iso(nextStart), end: iso(nextStart + 60 * MIN), guests: 4 },
       { id: "fake-ev-later", title: "範例：二〇二六年第四季硬體部跨部門專案進度檢討與下一階段規劃討論（含供應商與外部顧問）",
         start: iso(FAKE_T0 + 180 * MIN), end: iso(FAKE_T0 + 240 * MIN), guests: 12 }
@@ -1311,7 +1283,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 
   // ---------- 今天的行事曆 ----------
   // 每筆 { id, title, start, end }（毫秒）；後端只回今天、不含全天活動、不含參加者
-  let events = null, evState = "", evErr = "", evLoading = false, evFailed = false, quickFailed = false;
+  let events = null, evState = "", evErr = "", evFailed = false, quickFailed = false;
   let selId = "", selAuto = true, lastEvRender = 0;
   const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
 
@@ -1323,10 +1295,8 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   }
   async function fetchEvents(why) {
     if (!cfg.fake() && !cfg.url()) { evState = "nocfg"; renderEvents(); return "nocfg"; }
-    evLoading = true;
     if (!events) { evState = "loading"; renderEvents(); }
     const v = await request({ action: "todayEvents" }, EVENT_RETRY_WAIT, null, "讀取行事曆");
-    evLoading = false;
     if (v.ok) {
       events = v.r.events.map((e) => ({ id: String(e.id), title: String(e.title || "（沒有標題）"), start: Date.parse(e.start), end: Date.parse(e.end), guests: typeof e.guests === "number" ? e.guests : null }))
         .filter((e) => e.id && isFinite(e.start) && isFinite(e.end));
@@ -1342,7 +1312,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   }
   // 右上角的重新讀取（v5.4）：按下去圖示就轉（至少 0.6 秒，免得一閃而過），讀完跳「已更新」，失敗跳 warn；讀取中再按只會繼續轉
   let refreshing = false;
-  function spinRefresh(on) { ["btnEvRefresh", "btnEvRefresh2"].forEach((id) => $(id).classList.toggle("spin", on)); }
+  function spinRefresh(on) { $("btnEvRefresh").classList.toggle("spin", on); }
   async function refreshTap() {
     if (refreshing) return;
     refreshing = true; spinRefresh(true);
@@ -1431,8 +1401,6 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     $("evMsg").textContent = msg;
     $("evMsg").className = "msg " + (evState === "fail" || evState === "nocfg" ? "ng" : "warn");
     updateStartBtn();
-    renderNext();
-    if (!$("evSheet").hidden) renderEvSheet();
   }
 
   // 只有讀不到行事曆、而且臨時會議建活動也失敗時，才能不選會議直接輸入名稱開始（錄音比日曆重要）
@@ -1444,29 +1412,6 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     // 還沒選會議時，按鈕直接寫要做什麼；按了開始、還在開麥克風時寫「準備錄音…」（v5.4：按下去要看得到反應）
     $("btnStart").textContent = recBusy ? "準備錄音…" : selId || manual ? "開始錄音" : evState === "loading" ? "讀取今天的會議…" :
       events && events.some((e) => !isDone(e)) ? "先選上面的會議" : "用下面的「臨時會議」";
-  }
-
-  // 下一場：還沒結束、不是目前這場、在目前這場之後開始
-  function nextEvent(m, now) {
-    if (!events || !m) return null;
-    const after = m.evStart || m.t0;
-    return events.filter((e) => e.end > now && e.id !== m.eventId && e.start > after && !isDone(e))
-      .sort((a, b) => a.start - b.start)[0] || null;
-  }
-  function renderNext() {
-    const nx = nextEvent(meeting, Date.now());
-    $("nextBox").hidden = !nx;
-    if (nx) $("nextText").textContent = HM(nx.start) + "　" + nx.title;
-  }
-
-  function renderEvSheet() {
-    const box = $("evSheetList"); box.textContent = "";
-    const now = Date.now();
-    const list = sortedEvents(now).filter((x) => !meeting || x.e.id !== meeting.eventId);
-    list.forEach((x) => box.append(evButton(x.e, x.c, false, (e) => { $("evSheet").hidden = true; askSwitch({ ev: e }); })));
-    $("evSheetMsg").textContent = evLoading && !events ? "讀取今天的會議…" : !events ? "讀不到行事曆：按重新讀取再試，或用「臨時會議」" :
-      list.length ? "" : "今天沒有硬體組的其他會議";
-    box.hidden = !list.length;
   }
 
   // ---------- 成員名單（臨時會議選人）----------
@@ -1610,7 +1555,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 
   // ---------- 錄音 ----------
   // 一場會議 m：{ name, prefix, start, t0, eventId, eventP, evStart, endAt, quick, segments, segNo, saves,
-  //              status: recording｜grace（結束後可復原）｜switching（切換後可復原）｜done, end, endReason, completeSent }
+  //              status: recording｜done, end, endReason, completeSent }
   const meetings = new Map(); // prefix → 這次開頁錄的會議
   let meeting = null;         // 正在錄的那場
   let audioCtx = null, micStream = null, dest = null, analyser = null;
@@ -1679,13 +1624,14 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     return { label: t.label || "未提供名稱", ch: Number(st.channelCount) || 0 };
   }
   const chText = (i) => (i.ch ? i.ch + " 聲道" : "聲道數不明");
-  // 麥克風（聲音處理全關）→ ×GAIN（預設 64）→ 限幅 → 錄音串流；音量條量的是放大後的聲音（參數照 mic-test v6 實測）
+  // 麥克風（聲音處理全關）→ ×放大倍數（v5.5 自動調整，見下面的自動增益）→ 限幅 → 錄音串流；音量條量的是放大後的聲音（參數照 mic-test v6 實測）
   async function openMic() {
     micStream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
     });
     const src = audioCtx.createMediaStreamSource(micStream);
-    const gain = audioCtx.createGain(); gain.gain.value = GAIN;
+    // 重開麥克風（錄不到聲音重建、繼續錄音）時，新的 gain 接著用目前的倍數，自動增益改調新的節點
+    const gain = audioCtx.createGain(); gain.gain.value = agcGain;
     const limiter = audioCtx.createDynamicsCompressor();
     limiter.threshold.value = -6; limiter.knee.value = 0; limiter.ratio.value = 20;
     limiter.attack.value = 0.003; limiter.release.value = 0.25;
@@ -1695,6 +1641,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     sigAnalyser = audioCtx.createAnalyser(); sigAnalyser.fftSize = 32768;
     if (FAKE_MIC() !== "silent") src.connect(gain); // ?fakemic=silent：模擬麥克風沒有聲音
     gain.connect(limiter); limiter.connect(dest); limiter.connect(analyser); limiter.connect(sigAnalyser);
+    gainNode = gain; limiterNode = limiter; agcFollow();
     const t = micStream.getAudioTracks()[0];
     const info = readMic(t);
     log((micInfo.label && micInfo.label !== info.label ? "麥克風換成 " : "麥克風：") + info.label + "（" + chText(info) + "）");
@@ -1782,10 +1729,11 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   async function closeMic() {
     if (micStream) micStream.getTracks().forEach((t) => t.stop());
     micStream = null;
+    gainNode = limiterNode = null; // 自動增益不再碰舊的節點（下一場開麥克風時換新的）
     if (wakeLock) { try { await wakeLock.release(); } catch (e) {} wakeLock = null; }
   }
 
-  // 一段 seg：{ m, no, rec, chunks, startAt, stopAt, saved }；存檔時才用 seg.m 決定檔名（復原切換會改 seg.m）
+  // 一段 seg：{ m, no, rec, chunks, startAt, stopAt, saved }；存檔時用 seg.m 決定檔名
   function startSegment(m) {
     const seg = { m: m, no: ++m.segNo, chunks: [], startAt: Date.now(), stopAt: 0 };
     m.unsaved = (m.unsaved || 0) + 1; // 還沒存好的段數（上傳進度的分母要算進去）
@@ -1861,7 +1809,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
       meta: { t0: m.t0, evStart: m.evStart, evEnd: m.evEnd, endAt: m.endAt, quick: m.quick, lastNo: m.lastNo || 0 } });
   }
 
-  const REASON = { manual: "按結束", "switch": "切換到下一場", auto: "自動結束", recovered: "頁面重開後補送" };
+  const REASON = { manual: "按結束", auto: "自動結束", recovered: "頁面重開後補送" };
   // 這場真的結束：等每一段存好、等建日曆的結果，才把完成檔放進上傳佇列（v5.2：按結束後馬上做，不再等 2 分鐘）
   async function finalize(m) {
     if (m.status === "done" || m.cancelled) return;
@@ -1984,7 +1932,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     show("rec");
     $("recTitle").textContent = meeting.name;
     renderSegInfo();
-    renderEventMsg(); renderNext(); tick(); renderUploads();
+    renderEventMsg(); tick(); renderUploads();
   }
 
   async function startMeeting(t) {
@@ -2000,6 +1948,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     lastDone = ""; lastCancel = null; // 新的一場開始：「可以關掉了」改看這場
     headsetOk = ""; $("silentBanner").hidden = true; $("headsetBanner").hidden = true;
     checkSpace();
+    agcReset(); // 每一場從 ×64 開始（麥克風還開著時也是）
     const quick = t.quick ? createEvent(t.name, t.quick.memberIds) : null;
     const fail = (text, e) => {
       $("startMsg").textContent = text + e.name + "（" + VERSION + "）";
@@ -2011,7 +1960,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     const m = newMeeting(t, quick);
     await saveComplete(m);
     meeting = m; lastTouch = Date.now();
-    log("開始錄音：" + m.prefix + "（" + VERSION + "，每段 " + SEG_MS / 1000 + " 秒，放大 ×" + GAIN + "，" + micInfo.label + " " + chText(micInfo) +
+    log("開始錄音：" + m.prefix + "（" + VERSION + "，每段 " + SEG_MS / 1000 + " 秒，放大 " + (GAIN_Q ? "固定 ×" + GAIN : "自動，從 ×" + GAIN + " 開始") + "，" + micInfo.label + " " + chText(micInfo) +
       "，AudioContext " + audioCtx.state + (m.eventId ? "，日曆 " + HM(m.evStart) + "–" + HM(m.evEnd) : m.quick ? "，臨時會議" : "，沒有日曆") + "）");
     startSegment(m);
     watchSignal("開始錄音");
@@ -2081,47 +2030,6 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   $("btnCancelBack").addEventListener("click", closeCancel);
   $("cancelConfirm").addEventListener("click", (e) => { if (e.target === $("cancelConfirm")) closeCancel(); });
 
-  // 連開會議：切換前先確認一次（v5.2：拿掉 5 秒「復原切換」），切換時錄音不中斷
-  // （停舊的一段，立刻用同一個串流開新會議的第 01 段；舊的那場馬上結束並上傳）
-  let switchPending = null;
-  function askSwitch(t) {
-    if (!meeting || (t.ev && t.ev.id === meeting.eventId)) return;
-    if (t.ev && isDone(t.ev)) { toast(DONE_HINT, true); return; }
-    switchPending = t;
-    $("swTitle").textContent = "切換到「" + (t.ev ? t.ev.title : t.name) + "」？";
-    $("swText").textContent = "目前這場（" + meeting.name + "）會先結束並上傳，切換後不能再接著錄";
-    $("switchConfirm").hidden = false;
-  }
-  $("btnSwConfirm").addEventListener("click", () => {
-    const t = switchPending;
-    switchPending = null; $("switchConfirm").hidden = true;
-    if (t) switchTo(t);
-  });
-  $("btnSwBack").addEventListener("click", () => { switchPending = null; $("switchConfirm").hidden = true; });
-  $("switchConfirm").addEventListener("click", (e) => { if (e.target === $("switchConfirm")) { switchPending = null; $("switchConfirm").hidden = true; } });
-
-  function switchTo(t) {
-    const old = meeting;
-    if (!old) return;
-    if (t.ev && t.ev.id === old.eventId) return;
-    lastDone = "";
-    const quick = t.quick ? createEvent(t.name, t.quick.memberIds) : null;
-    const m = newMeeting(t.ev ? { name: t.ev.title, ev: t.ev } : t, quick);
-    clearTimeout(segTimer);
-    stopSeg(cur);
-    old.end = new Date().toISOString(); old.endReason = "switch";
-    meeting = m; lastTouch = Date.now();
-    startSegment(m);
-    saveComplete(m);
-    log("切換：" + old.name + " → " + m.name + "（錄音不中斷）");
-    showRecUI();
-    finalize(old);
-  }
-  $("btnSwitchNext").addEventListener("click", () => { const nx = nextEvent(meeting, Date.now()); if (nx) askSwitch({ ev: nx }); });
-  $("btnSwitchB").addEventListener("click", () => { const nx = nextEvent(meeting, Date.now()); if (nx) askSwitch({ ev: nx }); });
-  $("btnOther").addEventListener("click", () => { $("evSheet").hidden = false; renderEvSheet(); loadEvents("選其他會議"); });
-  $("btnEvSheetClose").addEventListener("click", () => { $("evSheet").hidden = true; });
-
   // 層 3：超過預定結束 60 分鐘、而且 60 分鐘都沒碰畫面 → 自動結束
   function autoEnd() {
     const m = meeting;
@@ -2154,10 +2062,6 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
         }
         $("endBanner").className = "strip" + (n ? " ng" : "");
         $("endText").textContent = m.name + " 預定 " + HM(m.endAt) + " 結束" + (over >= MIN ? "（已超過 " + Math.floor(over / MIN) + " 分鐘）" : "");
-        const nx = nextEvent(m, now);
-        const showNx = !!(nx && nx.start <= now + 10 * MIN);
-        $("btnSwitchB").hidden = !showNx;
-        if (showNx) $("btnSwitchB").textContent = "切換到：" + nx.title;
       }
     }
     if (now - lastEvRender >= 30000) renderEvents();
@@ -2221,7 +2125,53 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     } catch (e) { log("無法繼續錄音：" + e.name + "：" + e.message); }
   });
 
-  // ---------- 音量：平均 dBFS、連續 10 秒低於 -40 提醒 ----------
+  // ---------- 自動增益（v5.5）：使用者看不到；只寫診斷資訊和紀錄 ----------
+  // 不開 getUserMedia 的 autoGainControl（v5.3 實測選了聲音處理全關，打開可能連帶改變 iPhone 收音）；自己慢慢調 gain：
+  // 每秒看一次 → 限幅平均壓超過 3 dB（快爆音）馬上 ×0.8；有人說話（比底噪大 10 dB 以上）但平均低於 -30 dBFS → 每 3 秒最多 ×1.25；
+  // 只有底噪不調大（冷氣、風扇聲不放大）。底噪＝每秒最小的那一小段（約 43 ms）的音量，往下馬上跟、往上每秒最多 1 dB
+  // 數值都是起始值（需要查證）；?gain= 固定倍數、不自動調（測試用）
+  const AGC = { min: 16, max: 128, quiet: -30, up: 1.25, upMs: 3000, down: 0.8, limitDb: 3, margin: 10, floorRise: 1, minIn: -95, tau: 0.5, warmMs: 2000 };
+  let gainNode = null, limiterNode = null, agcGain = GAIN, agcLogged = GAIN, agcUpAt = 0, gFrom = GAIN, gAt = 0;
+  let agcN = 0, agcMin = Infinity, agcRed = 0, floorIn = NaN, agcWarm = 0;
+  window.__mvAgc = () => ({ gain: agcGain, node: gainNode, limiter: limiterNode, floorIn: floorIn, fixed: !!GAIN_Q }); // 驗證用
+  // gain 用 setTargetAtTime 慢慢變：自己估現在實際的倍數（換算成麥克風原本的音量時用）
+  const gainNow = () => agcGain + (gFrom - agcGain) * Math.exp(-(Date.now() - gAt) / (AGC.tau * 1000));
+  function setGain(v, why) {
+    v = Math.min(Math.max(v, AGC.min), AGC.max);
+    if (v === agcGain) return;
+    gFrom = gainNow(); gAt = Date.now(); agcGain = v;
+    if (gainNode) gainNode.gain.setTargetAtTime(v, gainNode.context.currentTime, AGC.tau);
+    // 紀錄：跟上次寫的差 10% 以上、或到上下限才寫，免得洗版
+    if (Math.abs(v / agcLogged - 1) >= 0.1 || v === AGC.min || v === AGC.max) {
+      log("放大 ×" + Math.round(agcLogged) + " → ×" + Math.round(v) + "（" + why + "）"); agcLogged = v;
+    }
+    renderDiag();
+  }
+  // 麥克風剛打開的前 2 秒不看（實測：開麥克風時限幅器會先壓 10 dB 以上、平均值也還沒穩，會誤判成快爆音、量錯底噪）
+  function agcClear() { agcWarm = Date.now() + AGC.warmMs; agcN = 0; agcMin = Infinity; agcRed = 0; floorIn = NaN; }
+  function agcReset() {
+    agcGain = agcLogged = gFrom = GAIN; gAt = 0; agcUpAt = Date.now(); agcClear();
+    if (gainNode) { gainNode.gain.cancelScheduledValues(0); gainNode.gain.setValueAtTime(GAIN, gainNode.context.currentTime); }
+    renderDiag();
+  }
+  // 新的 gain 節點：直接是目前的倍數，重新量底噪
+  function agcFollow() { gFrom = agcGain; gAt = 0; agcClear(); }
+  function agcFrame(pow, db) { // 每 100 ms 一次；pow、db 是限幅後的（這一小段、約 1 秒平均）
+    if (GAIN_Q || !gainNode || Date.now() < agcWarm) return;
+    const gdb = 20 * Math.log10(gainNow());
+    if (pow > 0) agcMin = Math.min(agcMin, 10 * Math.log10(pow) - gdb); // 完全沒聲音（0）不算底噪
+    const r = limiterNode ? limiterNode.reduction : 0; // 舊版 Safari 是 AudioParam
+    agcRed += Math.abs(typeof r === "number" ? r : (r && r.value) || 0);
+    if (++agcN < 10) return;
+    const red = agcRed / agcN;
+    if (isFinite(agcMin)) floorIn = isNaN(floorIn) ? agcMin : Math.min(agcMin, floorIn + AGC.floorRise);
+    agcN = 0; agcMin = Infinity; agcRed = 0;
+    if (red > AGC.limitDb) { setGain(agcGain * AGC.down, "快爆音"); return; }
+    const avgIn = db - gdb, talking = !isNaN(floorIn) && avgIn > AGC.minIn && avgIn - floorIn >= AGC.margin;
+    if (talking && db < AGC.quiet && agcGain < AGC.max && Date.now() - agcUpAt >= AGC.upMs) { agcUpAt = Date.now(); setGain(agcGain * AGC.up, "太小聲"); }
+  }
+
+  // ---------- 音量：平均 dBFS；倍數已經到 ×128（或 ?gain= 固定）還是連續 10 秒低於 -40 才提醒 ----------
   let avgPow = 0, lowSince = 0;
   const buf = new Float32Array(2048);
   setInterval(() => {
@@ -2233,7 +2183,8 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     const db = avgPow > 0 ? 10 * Math.log10(avgPow) : -Infinity;
     $("level").style.width = Math.min(100, Math.sqrt(pow) * 300) + "%";
     $("dbText").textContent = "平均 " + (isFinite(db) ? db.toFixed(1) : "-∞") + " dBFS";
-    if (db < -40) { lowSince = lowSince || Date.now(); } else { lowSince = 0; }
+    agcFrame(pow, db);
+    if (db < -40 && (GAIN_Q || agcGain >= AGC.max)) { lowSince = lowSince || Date.now(); } else { lowSince = 0; }
     $("lowBanner").hidden = !(lowSince && Date.now() - lowSince >= 10000);
   }, 100);
 
@@ -2374,10 +2325,6 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   }
 
   // ---------- 設定連結（v5.1）：#setup=<base64url({url,key})>，# 後面不會送到 GitHub Pages ----------
-  function b64urlEncode(s) {
-    let bin = ""; new TextEncoder().encode(s).forEach((b) => { bin += String.fromCharCode(b); });
-    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  }
   function b64urlDecode(s) {
     s = s.replace(/-/g, "+").replace(/_/g, "/");
     while (s.length % 4) s += "=";
@@ -2408,37 +2355,13 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     $("setupFmt").hidden = f === "m4a";
     $("setupFmt").className = "foot-note warn";
   }
-  function openShare() {
-    const url = lsGet("mv_api_url").trim(), key = lsGet("mv_upload_key").trim();
-    $("shareMsg").textContent = ""; $("shareMsg").className = "msg";
-    if (!url || !key) {
-      $("shareLink").value = "";
-      $("shareMsg").textContent = "還沒存部署網址和 key，不能產生連結"; $("shareMsg").className = "msg ng";
-    } else {
-      $("shareLink").value = location.origin + location.pathname + "?v=" + encodeURIComponent(params.get("v") || "5") +
-        "#setup=" + b64urlEncode(JSON.stringify({ url: url, key: key }));
-    }
-    $("btnCopyLink").disabled = !$("shareLink").value;
-    $("shareSheet").hidden = false;
-  }
-  $("btnShare").addEventListener("click", openShare);
-  $("shareClose").addEventListener("click", () => { $("shareSheet").hidden = true; });
-  $("btnCopyLink").addEventListener("click", async () => {
-    const t = $("shareLink").value;
-    let ok = false;
-    try { await navigator.clipboard.writeText(t); ok = true; }
-    catch (e) { try { $("shareLink").select(); ok = document.execCommand("copy"); } catch (e2) {} }
-    $("shareMsg").textContent = ok ? "已複製，貼到 LINE 私訊或 email 傳給同事" : "不能自動複製：請長按上面的連結自己複製";
-    $("shareMsg").className = "msg " + (ok ? "ok" : "warn");
-  });
-
   // 這支手機會錄成什麼格式（不改 pickMime 的結果，只是先告訴使用者）
   function recFormat() {
     if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices) return "";
     try { return MediaRecorder.isTypeSupported("audio/mp4") ? "m4a" : "webm"; } catch (e) { return "webm"; }
   }
   // 診斷資訊：版本、放大倍數、錄音格式、麥克風、聲道數、AudioContext 狀態（v5.3 拿掉我是誰、加後面三項）
-  function gainText() { return "×" + GAIN + (GAIN_Q ? "（?gain=" + GAIN_Q + (GAIN_Q === GAIN ? "" : "，超出 16–128，夾回 " + GAIN) + "）" : "（預設；?gain= 可測 16–128）"); }
+  function gainText() { return GAIN_Q ? "×" + GAIN + "（?gain=" + GAIN_Q + (GAIN_Q === GAIN ? "" : "，超出 16–128，夾回 " + GAIN) + "，固定）" : "自動（目前 ×" + Math.round(agcGain) + "）"; }
   const micName = () => micInfo.label || "還沒開過";
   const micCh = () => (micInfo.label ? chText(micInfo) : "還沒開過");
   const ctxState = () => (audioCtx ? audioCtx.state : "還沒建立");
@@ -2522,8 +2445,6 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     $("qcOut").textContent = "硬體部以外 " + out.length + " 人：" + out.map((m) => m.name + "（" + (m.unit || m.dept) + "）").join("、");
     // v5.3 拿掉「我是誰」：後端不會再自動加入自己，只寄給勾選的人
     $("qcNote").textContent = ms.length ? "會議記錄會寄給這 " + ms.length + " 人；不寄邀請信" : "不寄邀請信";
-    $("qcSwitch").hidden = !meeting;
-    if (meeting) $("qcSwitch").textContent = "目前這場（" + meeting.name + "）的錄音會先結束並上傳";
     $("quickConfirm").hidden = false;
   }
   function quickGo() {
@@ -2534,14 +2455,13 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     if (p.withPeople) lsSet("mv_member_pick", JSON.stringify(p.ids));
     $("quickSheet").hidden = true;
     const t = { name: p.raw, quick: { memberIds: p.ids } };
-    if (meeting) switchTo(t); else startMeeting(t);
+    startMeeting(t);
   }
   $("qStart").addEventListener("click", () => askQuick(true));
   $("qNoPick").addEventListener("click", () => askQuick(false));
   $("btnQConfirm").addEventListener("click", quickGo);
   // 返回修改：只關確認選單，臨時會議畫面上的名稱和勾選的人都還在
   $("btnQBack").addEventListener("click", () => { quickPending = null; $("quickConfirm").hidden = true; });
-  $("btnQuick2").addEventListener("click", () => { $("evSheet").hidden = true; openQuick(); });
 
   // ---------- 上傳錄音檔（v5.1）：選會議 → 選檔案 → 上傳並整理；全部傳完自動送完成檔 ----------
   const FILE_EXT = { m4a: "audio/x-m4a", mp3: "audio/mpeg", wav: "audio/wav", aac: "audio/aac", webm: "audio/webm" };
@@ -2809,6 +2729,8 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     const ev = events && events.find((e) => e.id === selId);
     if (ev) {
       if (isDone(ev)) { toast(DONE_HINT, true); return; }
+      // v5.5：跟日曆的開始時間差超過 10 分鐘（提早、晚開始都算）→ 先確認是不是這場
+      if (Math.abs(Date.now() - ev.start) > LATE_MS) { askLate(ev); return; }
       startMeeting({ name: ev.title, ev: ev }); return;
     }
     if (!manualAllowed()) return;
@@ -2816,9 +2738,26 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     if (!cleanName(raw)) { $("startMsg").textContent = "請先輸入會議名稱"; $("meetingName").focus(); return; }
     startMeeting({ name: raw });
   });
+  // 時間差確認（v5.5）：按「開始錄音」那一下直接呼叫 startMeeting（中間不能 await：iPhone 要在點擊當下開音訊）
+  const LATE_MS = 10 * MIN;
+  let latePending = null;
+  function askLate(ev) {
+    latePending = ev;
+    $("lateTitle").textContent = "這場 " + HM(ev.start) + " 開始，現在 " + HM(Date.now());
+    $("lateText").textContent = "確定要錄「" + ev.title + "」嗎？";
+    $("lateConfirm").hidden = false;
+    log("時間差 " + Math.round((Date.now() - ev.start) / MIN) + " 分鐘，先確認：" + ev.title);
+  }
+  const closeLate = () => { latePending = null; $("lateConfirm").hidden = true; };
+  $("btnLateGo").addEventListener("click", () => {
+    const ev = latePending;
+    closeLate();
+    if (ev) startMeeting({ name: ev.title, ev: ev });
+  });
+  $("btnLateBack").addEventListener("click", closeLate);
+  $("lateConfirm").addEventListener("click", (e) => { if (e.target === $("lateConfirm")) closeLate(); });
   $("meetingName").addEventListener("input", updateStartBtn);
   $("btnEvRefresh").addEventListener("click", refreshTap);
-  $("btnEvRefresh2").addEventListener("click", refreshTap);
 
   $("btnHome").addEventListener("click", () => { $("autoEndBanner").hidden = true; goHome(); });
   $("btnTipsOk").addEventListener("click", () => { lsSet("mv_tips_seen", "1"); $("tipsCard").hidden = true; });
@@ -2833,7 +2772,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   renderDiag();
   // v5.3：設定連結打開後直接測試連線、成功就到首頁，不用再做任何選擇（失敗才停在設定畫面，按「完成設定」再試）
   if (linked && fromLink) setupSave(EVENT_RETRY_WAIT);
-  if (GAIN_Q) log("測試：放大倍數 ?gain=" + GAIN_Q + (GAIN_Q === GAIN ? "" : "（超出 16–128，夾回 ×" + GAIN + "）"));
+  if (GAIN_Q) log("測試：放大倍數固定 ?gain=" + GAIN_Q + (GAIN_Q === GAIN ? "" : "（超出 16–128，夾回 ×" + GAIN + "）") + "，不自動調");
   if (cfg.fake()) log("假上傳模式（" + cfg.fake() + "）");
   if (SEG_MS !== 1200000) log("測試：每段 " + SEG_MS / 1000 + " 秒");
 
