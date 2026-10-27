@@ -16,6 +16,8 @@
            還是沒有就紅色提示重新整理）、偵測到耳機提醒、取消這場（不產生會議記錄，送後端 cancel）、清單標題「硬體組今天的會議」、
            拿掉「我是誰」（2 場以上同時進行時不自動預選）、診斷資訊加麥克風名稱／聲道數／AudioContext 狀態
      v5.3.1：只改文字：耳機提醒改成「可能正在用耳機」（判斷規則不變）、診斷資訊「（可能是耳機）」、範例會議名稱不放專案名稱
+     v5.4：使用者只看得到他在意的事：首頁「最近的錄音」（每場傳上去了沒、重送）、重新讀取會轉＋toast、設定頁只留連線／分享／診斷資訊
+           （拿掉說明、外觀、進階網址，一律跟手機亮暗）、完成畫面進度只算錄音段數、上傳錄音檔先選檔再依檔案時間猜是哪一場
      放在公開的 GitHub Pages：不能寫死任何網址、key、email、會議內容
      最後更新: 2026/10/22 -->
 <html lang="zh-Hant-TW">
@@ -33,26 +35,20 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <style>
-/* 色票接近 iOS 系統色：預設跟手機的亮暗模式；設定頁可以固定亮色或暗色（html 的 data-theme） */
+/* 色票接近 iOS 系統色：一律跟手機的亮暗模式（v5.4 拿掉設定頁的外觀；舊的 mv_theme 不讀） */
 :root {
   --bg: #f2f2f7; --card: #ffffff; --fg: #000000; --muted: #6e6e73; --sep: #c6c6c8; --fill: #e5e5ea;
   --blue: #007aff; --red: #ff3b30; --green: #34c759; --orange: #ff9500; --on: #ffffff;
-  --dim: rgb(0 0 0 / .4); --bar: rgb(242 242 247 / .92); --seg-on: #ffffff;
+  --dim: rgb(0 0 0 / .4); --bar: rgb(242 242 247 / .92);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root {
     --bg: #000000; --card: #1c1c1e; --fg: #ffffff; --muted: #98989d; --sep: #38383a; --fill: #2c2c2e;
     --blue: #0a84ff; --red: #ff453a; --green: #30d158; --orange: #ff9f0a;
-    --dim: rgb(0 0 0 / .6); --bar: rgb(0 0 0 / .9); --seg-on: #636366;
+    --dim: rgb(0 0 0 / .6); --bar: rgb(0 0 0 / .9);
     color-scheme: dark;
   }
-}
-:root[data-theme="dark"] {
-  --bg: #000000; --card: #1c1c1e; --fg: #ffffff; --muted: #98989d; --sep: #38383a; --fill: #2c2c2e;
-  --blue: #0a84ff; --red: #ff453a; --green: #30d158; --orange: #ff9f0a;
-  --dim: rgb(0 0 0 / .6); --bar: rgb(0 0 0 / .9); --seg-on: #636366;
-  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -75,6 +71,9 @@ body {
 .nav .left { margin-right: auto; color: var(--muted); font-size: 15px; }
 .icon-btn { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 22px; background: transparent; color: var(--blue); cursor: pointer; padding: 0; }
 .icon-btn:active { background: var(--fill); }
+/* v5.4 重新讀取中：圖示轉（至少 0.6 秒） */
+.icon-btn.spin .ico { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .text-btn { border: 0; background: transparent; color: var(--blue); font: inherit; font-size: 17px; padding: 10px 8px; cursor: pointer; min-height: 44px; }
 .text-btn:disabled { color: var(--muted); opacity: .6; cursor: default; }
 h1 { margin: 0; font-size: 32px; line-height: 1.15; font-weight: 700; letter-spacing: .01em; overflow-wrap: anywhere; }
@@ -111,6 +110,15 @@ button.ev.sel .ck { visibility: visible; }
 button.ev.later .t, button.ev.ended .t, button.ev.ended .ti, button.ev.done .t, button.ev.done .ti { color: var(--muted); }
 .tag { font-size: 13px; font-weight: 600; }
 .tag.now { color: var(--green); } .tag.soon { color: var(--orange); } .tag.rec, .tag.ended, .tag.done { color: var(--muted); }
+/* v5.4 首頁「最近的錄音」：每場一行（開始時間、名稱、狀態；沒傳上去時右邊一顆重送） */
+.rc { display: grid; grid-template-columns: 3.4em 1fr auto; align-items: center; gap: 0 12px; padding: 10px 16px; min-height: 50px; }
+.rc .t { font-size: 15px; font-weight: 600; }
+.rc .t small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+.rc .ti { font-size: 15px; min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.rc .st { display: flex; align-items: center; gap: 4px 8px; font-size: 15px; font-weight: 600; white-space: nowrap; }
+.rc .st .ico { width: 18px; height: 18px; stroke-width: 2.5; }
+.rc .st.busy { color: var(--orange); } .rc .st.off { color: var(--muted); }
+.rc .btn.small { background: var(--fill); color: var(--blue); min-height: 36px; padding: 6px 12px; }
 details.more > summary { list-style: none; cursor: pointer; color: var(--muted); font-size: 15px; padding: 8px 16px; }
 details.more > summary::-webkit-details-marker { display: none; }
 details.more[open] > summary { padding-bottom: 6px; }
@@ -189,11 +197,12 @@ label.field input { background: transparent; padding: 4px 0; border-radius: 0; }
 .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgb(0 0 0 / .25); transition: transform .2s; }
 .switch input:checked { background: var(--green); }
 .switch input:checked::after { transform: translateX(20px); }
-.seg { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--fill); border-radius: 9px; padding: 2px; margin: 10px 16px; }
-.seg button { font: inherit; font-size: 15px; font-weight: 500; border: 0; background: transparent; color: var(--fg); padding: 6px 4px; border-radius: 7px; cursor: pointer; }
-.seg button[aria-pressed="true"] { background: var(--seg-on); box-shadow: 0 1px 3px rgb(0 0 0 / .18); font-weight: 600; }
 .help { padding: 12px 16px; font-size: 15px; display: grid; gap: 6px; }
 .help p { margin: 0; }
+.help.diag-p { margin: 0; font-size: 13px; color: var(--muted); }
+/* v5.4 設定頁的連線：一行狀態（確認中／已連線＋綠勾／失敗紅字），要換 key 才展開 */
+#connRow .ico { color: var(--green); }
+#connText.ng { color: var(--red); } #connText.wait { color: var(--muted); }
 pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; color: var(--muted); max-height: 320px; overflow: auto; }
 .ver { text-align: center; font-size: 13px; color: var(--muted); }
 /* v5.1：清單裡可以點的一列（其他方式、分享）、檔案列 */
@@ -203,7 +212,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 .row-link small, .item .grow small { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
 .item .grow small.ng { color: var(--red); } .item .grow small.warn { color: var(--orange); }
 .row-link .chev { color: var(--muted); width: 18px; height: 18px; }
-.row-link .ck { color: var(--blue); visibility: hidden; } .row-link.sel .ck { visibility: visible; }
+.row-link.sel .chev { transform: rotate(90deg); } /* 「沒有在日曆上」展開時箭頭朝下 */
 .other-ways { margin-top: 20px; }
 .icon-btn.sm { width: 36px; height: 36px; } .icon-btn.sm .ico { width: 18px; height: 18px; } .icon-btn.sm:disabled { color: var(--sep); cursor: default; }
 .foot-note.warn { color: var(--orange); }
@@ -245,7 +254,6 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 .toast.warn::before { background: var(--orange); }
 #diagCopy { display: block; width: 100%; height: 200px; margin: 0; border: 0; padding: 12px 16px; font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--fg); background: var(--fill); resize: vertical; }
 </style>
-<script>try { var t = localStorage.getItem("mv_theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -297,6 +305,11 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     </div>
     <h1>硬體組今天的會議</h1>
     <div id="stripSlotStart"></div>
+    <!-- v5.4：這支手機今天和昨天錄的每一場，傳上去了沒（取代 v5.2 首頁的上傳狀態列）；沒錄過就整塊不顯示 -->
+    <div id="recentBox" hidden>
+      <p class="cap">最近的錄音</p>
+      <div class="list" id="recentList"></div>
+    </div>
     <div class="list help" id="tipsCard" hidden>
       <p><b>開始前</b></p>
       <p>用 Safari 或 Chrome 開，不要從 LINE 開；錄音時不要戴耳機；錄音中不要切 App、不要鎖螢幕。</p>
@@ -395,7 +408,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   <div class="strip ng" id="rejectBanner" hidden><span id="rejectText"></span>
         <button class="btn small" id="btnRejectGear">檢查設定</button>
         <button class="icon-btn x" id="btnRejectX" aria-label="關閉"><svg class="ico"><use href="#i-x"/></svg></button></div>
-  <!-- 上傳狀態（v5.2）：和完成畫面同一句話，回到首頁也看得到能不能關掉 -->
+  <!-- 上傳狀態：錄音中畫面，上一場傳不上去時提示（v5.4 首頁改看「最近的錄音」） -->
   <div class="strip" id="upStrip" hidden><span id="upStripText"></span><button class="btn small primary" id="btnStripRetry" hidden>全部重送</button></div>
   <div class="strip" id="spaceBanner" hidden></div>
   <div class="strip ok" id="autoEndBanner" hidden><span id="autoEndText"></span>
@@ -407,54 +420,47 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   <div class="wrap body">
     <div class="nav"><button class="text-btn" id="btnClose" style="font-weight:600">完成</button></div>
     <h1>設定</h1>
-    <div>
+    <!-- v5.4：只留 3 塊（連線、分享給同事、診斷資訊）；說明、外觀、進階網址拿掉 -->
+    <div id="cfgConnBox">
       <p class="cap">連線</p>
       <div class="list">
-        <div class="field keyrow"><label class="field" style="padding:0;flex:1">上傳 key<input type="password" id="cfgKey" autocomplete="off" spellcheck="false"></label>
-          <button class="icon-btn" type="button" id="cfgEye" aria-label="顯示 key"><svg class="ico"><use href="#i-eye"/></svg></button></div>
-        <div class="item"><button class="btn small primary" id="btnSave">測試並儲存</button><span class="msg" id="cfgMsg" style="padding:0"></span></div>
-        <button class="row-link" type="button" id="btnShare"><span class="grow"><b>分享給同事</b><small>產生設定連結，同事打開就能用</small></span><svg class="ico chev"><use href="#i-chevron"/></svg></button>
+        <!-- 打開設定就自動測一次：確認連線中… → 已連線＋綠勾（要換 key 才展開）｜失敗：紅字原因＋key 欄直接展開 -->
+        <div class="item" id="connRow"><svg class="ico" id="connOk" hidden><use href="#i-check"/></svg><span class="grow" id="connText"></span>
+          <button class="text-btn" type="button" id="btnChangeKey" hidden>更換 key</button></div>
+        <div id="keyBox" hidden>
+          <div class="field keyrow"><label class="field" style="padding:0;flex:1">上傳 key<input type="password" id="cfgKey" autocomplete="off" spellcheck="false"></label>
+            <button class="icon-btn" type="button" id="cfgEye" aria-label="顯示 key"><svg class="ico"><use href="#i-eye"/></svg></button></div>
+          <div class="item"><button class="btn small primary" id="btnSave">測試並儲存</button><span class="msg" id="cfgMsg" style="padding:0"></span></div>
+        </div>
       </div>
       <p class="foot-note" id="cfgAskNote" hidden>還沒設定：請向 Jacky 要設定連結，用那條連結打開就會自動填好。</p>
     </div>
-    <details class="more" id="cfgAdv"><summary>進階</summary>
-      <div class="list"><label class="field">部署網址<input type="url" id="cfgUrl" autocomplete="off" spellcheck="false"></label></div>
-    </details>
-    <div>
-      <p class="cap">外觀</p>
-      <div class="list"><div class="seg" id="themeSeg" role="group" aria-label="外觀">
-        <button type="button" data-theme="auto">自動</button><button type="button" data-theme="light">亮色</button><button type="button" data-theme="dark">暗色</button>
-      </div></div>
+    <div class="list" id="cfgShareBox">
+      <button class="row-link" type="button" id="btnShare"><span class="grow"><b>分享給同事</b><small>產生設定連結，同事打開就能用</small></span><svg class="ico chev"><use href="#i-chevron"/></svg></button>
     </div>
-    <div>
-      <p class="cap">說明</p>
-      <div class="list help">
-        <p>用 Safari 或 Chrome 開，不要從 LINE 開。</p>
-        <p>錄音時不要戴耳機；錄音中不要切 App、不要鎖螢幕。</p>
-        <p>每 20 分鐘存一段，先存在手機，上傳成功才刪。網路斷了會自動再試。</p>
-        <p>錄錯場、忘了拿耳機：錄音中按「結束會議」→「取消這場」，不會產生會議記錄。已經按了結束才發現：10 小時內把文件裡那場會議的分頁刪掉，就不會寄出。</p>
-        <p>加到主畫面，用起來像 App：Safari 按「分享」→「加入主畫面」；Chrome 按選單 →「加到主畫面」。加到主畫面後，要在那裡重新設定一次。</p>
-        <p id="persistNote" hidden>這個瀏覽器沒有允許持久儲存：手機空間不夠時可能清掉暫存，錄完請盡快上傳。</p>
-        <p id="webmBanner" hidden>這台手機只能錄 webm：Studio 能不能讀 webm 需要查證。</p>
-      </div>
-    </div>
-    <details class="more" id="diagBox">
-      <summary>診斷資訊</summary>
-      <div class="list">
-        <div class="item"><button class="btn small primary" id="btnCopyDiag">複製診斷資訊</button><span class="msg" id="diagMsg" style="padding:0"></span></div>
-        <textarea id="diagCopy" readonly hidden aria-label="診斷資訊"></textarea>
-        <p class="help" id="diagInfo" style="font-size:13px;color:var(--muted)"></p>
-        <!-- 每個檔案的上傳狀態（v5.2 從完成畫面移到這裡） -->
-        <div id="upCard" hidden>
-          <ul class="uploads" id="uploads"></ul>
-          <div class="row-btns" style="padding:4px 16px 12px">
-            <button class="btn small" id="btnRetry" hidden>全部重送</button>
-            <button class="btn small" id="btnDlAll" hidden>全部下載到手機</button>
+    <div id="cfgDiagBox">
+      <p class="cap">診斷資訊</p>
+      <button class="btn primary" id="btnCopyDiag">複製診斷資訊（傳給 Jacky）</button>
+      <p class="msg" id="diagMsg" style="margin-top:8px"></p>
+      <textarea id="diagCopy" readonly hidden aria-label="診斷資訊" style="margin-top:8px;border-radius:12px"></textarea>
+      <details class="more" id="diagBox" style="margin-top:4px">
+        <summary>詳細</summary>
+        <div class="list">
+          <p class="help diag-p" id="diagInfo"></p>
+          <p class="help diag-p" id="persistNote" hidden>這個瀏覽器沒有允許持久儲存：手機空間不夠時可能清掉暫存，錄完請盡快上傳。</p>
+          <p class="help diag-p" id="webmBanner" hidden>這台手機只能錄 webm：Studio 能不能讀 webm 需要查證。</p>
+          <!-- 每個檔案的上傳狀態（v5.2 從完成畫面移到這裡） -->
+          <div id="upCard" hidden>
+            <ul class="uploads" id="uploads"></ul>
+            <div class="row-btns" style="padding:4px 16px 12px">
+              <button class="btn small" id="btnRetry" hidden>全部重送</button>
+              <button class="btn small" id="btnDlAll" hidden>全部下載到手機</button>
+            </div>
           </div>
+          <pre class="mono" id="log"></pre>
         </div>
-        <pre class="mono" id="log"></pre>
-      </div>
-    </details>
+      </details>
+    </div>
     <div class="ver" id="ver"></div>
   </div>
 </section>
@@ -506,18 +512,26 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   </div>
 </div>
 
-<!-- 上傳錄音檔：選會議 → 選檔案 → 確認上傳（一個畫面一件事） -->
+<!-- 上傳錄音檔：選檔 → 是哪一場（依檔案時間自動選）→ 確認上傳（一個畫面一件事；v5.4 先選檔） -->
 <section class="screen" id="fileScr" hidden>
   <div class="wrap body">
     <div class="nav"><button class="text-btn" id="fileBack" style="margin-right:auto">取消</button>
       <span class="sample" id="fakeBanner4" hidden>範例資料・假上傳</span></div>
-    <h1 id="fileTitle">選會議</h1>
+    <h1 id="fileTitle">上傳錄音檔</h1>
     <div id="fileStep1">
+      <input type="file" id="fileInput" accept="audio/*,.m4a,.mp3,.wav,.aac" multiple hidden>
+      <button class="btn primary" type="button" id="btnPickFiles">選擇錄音檔</button>
+      <p class="foot-note">支援 m4a、mp3、wav、aac；可以一次選好幾個，照順序上傳，可以上下調整</p>
+      <div class="list" id="fileList" style="margin-top:12px"></div>
+      <p class="msg" id="fileMsg" style="margin-top:8px"></p>
+    </div>
+    <div id="fileStep2" hidden>
+      <p class="foot-note" id="fileGuess" style="margin:0 4px 10px" hidden>依檔案時間自動選的，不對可以改</p>
       <div class="chips" id="fileDates"></div>
       <p class="msg" id="fileEvMsg" style="margin-top:10px"></p>
       <div class="list" id="fileEvList" style="margin-top:10px"></div>
       <div class="list" style="margin-top:16px">
-        <button class="row-link" type="button" id="fileManualBtn"><span class="grow"><b>沒有在日曆上</b><small>輸入會議名稱、日期、開始時間</small></span><svg class="ico ck"><use href="#i-check"/></svg></button>
+        <button class="row-link" type="button" id="fileManualBtn"><span class="grow"><b>沒有在日曆上</b><small>輸入會議名稱、日期、開始時間</small></span><svg class="ico chev"><use href="#i-chevron"/></svg></button>
         <div id="fileManual" hidden>
           <label class="field">會議名稱<input type="text" id="fileMName" maxlength="60" autocomplete="off"></label>
           <label class="field">日期<input type="date" id="fileMDate"></label>
@@ -525,20 +539,13 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
         </div>
       </div>
     </div>
-    <div id="fileStep2" hidden>
-      <p class="small-muted" id="fileFor" style="text-align:left"></p>
-      <input type="file" id="fileInput" accept="audio/*,.m4a,.mp3,.wav,.aac" multiple hidden>
-      <button class="btn plain" type="button" id="btnPickFiles">選擇錄音檔</button>
-      <p class="foot-note">m4a、mp3、wav、aac；可以選好幾個，順序就是段號（_01、_02…），可以上下調整。</p>
-      <div class="list" id="fileList" style="margin-top:12px"></div>
-      <p class="msg" id="fileMsg" style="margin-top:8px"></p>
-    </div>
     <div id="fileStep3" hidden>
       <div class="list help" id="fileSummary"></div>
       <div class="done-head" id="fileDone" hidden>
         <svg class="ico hero" id="fileDoneIco"><use href="#i-done"/></svg>
         <div id="fileDoneTitle"></div>
         <div class="done-next" id="fileDoneNote"></div>
+        <div class="done-small" id="fileDoneSmall" hidden></div>
       </div>
       <div class="list" id="fileProg" style="margin-top:12px"></div>
       <p class="msg" id="fileUpMsg" style="margin-top:8px"></p>
@@ -583,12 +590,13 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 <script>
 (function () {
   "use strict";
-  const VERSION = "record v5.3.1（10/22）";
+  const VERSION = "record v5.4（10/22）";
   const $ = (id) => document.getElementById(id);
   const pad = (n) => String(n).padStart(2, "0");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const mb = (n) => (n / 1048576).toFixed(2) + " MB";
   const HM = (t) => { const d = new Date(t); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+  const ymd = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
   const MIN = 60000;
   const dur = (ms) => (ms % MIN ? Math.round(ms / 1000) + " 秒" : ms / MIN + " 分鐘");
   const params = new URLSearchParams(location.search);
@@ -976,6 +984,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
       await store.del(rec.name);
       const cm = meetings.get(rec.prefix);
       if (cm && rec.kind === "complete") cm.completeSent = true;
+      histPut(rec.prefix, { st: "cancelled" });
       setRow(rec.name, "這場已取消");
       log("後端說這場已取消，從手機刪掉：" + rec.name);
       return;
@@ -986,6 +995,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
       const m = meetings.get(rec.prefix);
       if (rec.kind === "complete") {
         if (m) m.completeSent = true;
+        histPut(rec.prefix, { st: "ok" }); // 所有段落和完成檔都收到成功回應
         lastDone = rec.prefix; lastCancel = null;
         // 完成檔送出才算這場結束（v5.2）：日曆會議標「已完成」，不能再選來錄
         if (rec.content && rec.content.calendarEventId) markDone(rec.content.calendarEventId);
@@ -1118,10 +1128,24 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     renderSegInfo();
     renderDone();
     renderUpStrip();
+    renderRecent();
     if (screen === "settings") renderDiag();
   }
 
-  // 上傳狀態（v5.2）：完成畫面和首頁狀態列共用同一句話
+  // 上傳中那一句（v5.4 兩句合成一句）：有手機暫存 → 關掉也會接著傳；沒有暫存 → 關掉真的會遺失
+  const keepText = () => (useMem ? "先不要關掉這個頁面，請保持網路" : "請保持網路；不小心關掉也沒關係，下次打開會接著傳");
+  // 全部完成的下一句（v5.4）：後端寫進文件時會通知與會者；不放刪分頁、取消寄出之類的小字（按完結束只需要知道傳好了、之後會通知）
+  const DONE_NEXT = "會議記錄草稿好了會通知與會者";
+  // 一場的錄音段數進度（v5.4）：n＝錄了幾段（含還在存的），up＝已經傳上去幾段；recs 是暫存清單（只看這場的段落）
+  // 這次開頁錄的看 meetings；重新整理後看「最近的錄音」記的段數
+  function segProg(p, recs) {
+    const m = meetings.get(p), h = m ? null : histAll().find((x) => x.p === p);
+    const saved = m ? m.segments : h ? h.s || 0 : 0;
+    const pend = recs.filter((r) => r.kind === "segment" && r.prefix === p).length;
+    return { up: Math.max(0, saved - pend), n: saved + (m ? m.unsaved || 0 : 0) };
+  }
+
+  // 上傳狀態（v5.2）：完成畫面用（v5.4 首頁改看「最近的錄音」，每場分開算）
   // 「可以關掉了」只在所有段落和完成檔都收到後端成功回應之後才出現（完成檔沒送出就不算完成）
   // kind：busy 上傳中｜fail 有東西傳不上去｜reject 後端拒絕｜ok 全部完成｜none 沒有錄到聲音｜"" 沒事
   function upState(recs) {
@@ -1131,35 +1155,32 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     // 已經按結束、完成檔還沒送出的會議（包括還在等最後一段存好、等建日曆結果的；取消的不算）
     const open = Array.from(meetings.values()).filter((m) => m !== meeting && m.end && !m.completeSent && !m.noAudio && !m.cancelled);
     const pre = new Set(left.map((r) => r.prefix).concat(open.map((m) => m.prefix)));
-    let up = 0;
-    rows.forEach((st, name) => { if (st === "已上傳" && pre.has(prefixOfName(name))) up++; });
-    // 還沒進暫存的：完成檔（還在等）和最後一段（還在存）
-    const extra = open.filter((m) => !left.some((r) => r.kind === "complete" && r.prefix === m.prefix)).length +
-      open.reduce((t, m) => t + (m.unsaved || 0), 0);
-    const n = up + left.length + extra;
     const segs = left.filter((r) => r.kind === "segment").length;
-    const keep = useMem ? "這支手機不能暫存：關掉頁面，還沒傳的錄音會不見" : "上傳中被關掉也不會遺失：錄音都還在手機上，下次打開會自動補傳";
     const rej = left.find((r) => r.rejected);
     if (rej) return { kind: "reject", title: "上傳被拒絕", next: "錄音還在手機上，先不要關掉。請到設定檢查 key，或複製診斷資訊傳給 Jacky", small: rej.lastError };
     if (!pumping && left.some((r) => r.status === "failed")) {
       return { kind: "fail", title: segs ? "還有 " + segs + " 段沒傳上去" : "還差最後一步沒送出",
         next: "錄音還在手機上。連上網路後按「全部重送」，傳完前先不要關掉", small: "" };
     }
-    if (left.length || open.length) return { kind: "busy", title: "上傳中（" + Math.min(up + 1, n) + "/" + n + "）", next: "先不要關掉這個頁面，請保持網路", small: keep };
+    if (left.length || open.length) {
+      // v5.4 進度只算錄音段數（完成檔不算一份）：「上傳中（第 2 段，共 2 段）」；完成檔還沒送出時照舊不算完成
+      let up = 0, n = 0;
+      pre.forEach((p) => { const g = segProg(p, left); up += g.up; n += g.n; });
+      return { kind: "busy", title: n ? "上傳中（第 " + Math.min(up + 1, n) + " 段，共 " + n + " 段）" : "上傳中", next: keepText(), small: "" };
+    }
     if (cancels.length) {
       if (cancels.some((r) => r.status === "failed" && !inFlight.has(r.name))) {
         return { kind: "fail", title: "已取消，還差一步沒送出", next: "連上網路後按「全部重送」；關掉也沒關係，下次打開會自動補送", small: "", noDl: true };
       }
-      return { kind: "busy", title: "取消中", next: "先不要關掉這個頁面，請保持網路", small: "" };
+      return { kind: "busy", title: "取消中", next: keepText(), small: "" };
     }
     if (lastCancel) {
-      // 舊後端（不認得 cancel）：手機端照樣取消；雲端已經有的段落要請 Jacky 處理
+      // 舊後端（不認得 cancel）：手機端照樣取消；雲端已經有的段落要請 Jacky 處理（v5.4 拿掉 NotebookLM 那行：使用者不需要知道）
       return lastCancel.old && lastCancel.uploaded > 0
         ? { kind: "cancelled", title: "已取消", next: "已上傳的 " + lastCancel.uploaded + " 段還在雲端，請告訴 Jacky", small: "" }
-        : { kind: "cancelled", title: "已取消，可以關掉了", next: "這場不會產生會議記錄",
-            small: lastCancel.inNotebook > 0 ? "有 " + lastCancel.inNotebook + " 段已加進 NotebookLM，Jacky 每週清來源時會一起清掉" : "" };
+        : { kind: "cancelled", title: "已取消，可以關掉了", next: "這場不會產生會議記錄", small: "" };
     }
-    if (lastDone) return { kind: "ok", title: "已上傳完成，可以關掉了", next: "約 30 分鐘後會出現在「硬體組會議記錄2026」", small: "" };
+    if (lastDone) return { kind: "ok", title: "已上傳完成，可以關掉了", next: DONE_NEXT, small: "" };
     const last = Array.from(meetings.values()).filter((m) => m !== meeting && m.end && !m.cancelled).pop();
     if (last && last.noAudio) return { kind: "none", title: "沒有錄到聲音", next: "這場沒有錄到聲音，不會產生會議記錄。請確認麥克風權限後，回首頁再錄一次", small: "" };
     return { kind: "" };
@@ -1179,15 +1200,105 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     $("btnDoneDl").hidden = !!s.noDl; // 只剩取消通知沒送出：沒有錄音可以下載
     $("btnHome").className = "btn " + (s.kind === "fail" ? "plain" : "primary"); // 一個畫面只有一個藍色主要按鈕
   }
-  // 首頁最上面的狀態列：結束後回到首頁也看得到能不能關掉；錄音中只在傳不上去時出現；完成畫面已經有大狀態，不重複
+  // 錄音中畫面：上一場傳不上去時的狀態列（v5.4 首頁改看「最近的錄音」；完成畫面已經有大狀態，不重複）
   function renderUpStrip() {
     const s = upNow;
-    const showIt = s.kind && s.kind !== "reject" && s.kind !== "none" && (screen === "start" || (screen === "rec" && s.kind === "fail"));
+    const showIt = screen === "rec" && s.kind === "fail";
     $("upStrip").hidden = !showIt;
     if (!showIt) return;
-    $("upStrip").className = "strip" + (s.kind === "ok" || s.kind === "cancelled" ? " ok" : s.kind === "fail" ? " ng" : "");
-    $("upStripText").textContent = s.kind === "ok" ? s.title : s.title + "：" + s.next;
-    $("btnStripRetry").hidden = s.kind !== "fail";
+    $("upStrip").className = "strip ng";
+    $("upStripText").textContent = s.title + "：" + s.next;
+    $("btnStripRetry").hidden = false;
+  }
+
+  // ---------- 最近的錄音（v5.4）：這支手機今天和昨天錄的每一場，最多 10 場、新的在上面；存在 localStorage，重新整理後還在 ----------
+  // 每場 { p 前綴, n 會議名稱, t 開始時間, a 加進來的時間, s 錄音段數, st 最後狀態, f 上傳錄音檔 }
+  // st：rec 錄了｜ok 已上傳｜none 沒錄到聲音｜cancelled 已取消｜busy、fail（只有上傳錄音檔：檔案只在記憶體，不進暫存）
+  // 上傳中、沒傳上去照暫存清單（lastRecs）和 meetings 依前綴算（不另外做一套）；st 只在手機上沒有這場的東西時才用
+  const HIST_KEY = "mv_history", HIST_MAX = 10;
+  let recsReady = false; // 開頁讀完暫存清單才畫（不然還沒傳的會先被當成已上傳）
+  function histAll() { const a = lsJson(HIST_KEY, []); return Array.isArray(a) ? a.filter((h) => h && h.p) : []; }
+  // 前綴 YYYY-MM-DD_HHMM_名稱 → 一筆（還在手機上、但沒有紀錄的：例如 v5.4 以前錄的）
+  function histFromPrefix(p) {
+    const x = /^(\d{4})-(\d\d)-(\d\d)_(\d\d)(\d\d)_(.*)$/.exec(p);
+    const t = x ? new Date(+x[1], x[2] - 1, +x[3], +x[4], +x[5]).getTime() : Date.now();
+    return { p: p, n: x ? x[6] : p, t: t, a: t, s: 0, st: "rec" };
+  }
+  function histPut(p, patch) {
+    const all = histAll();
+    let h = all.find((x) => x.p === p);
+    if (!h) { h = histFromPrefix(p); all.push(h); }
+    Object.assign(h, patch);
+    lsSet(HIST_KEY, JSON.stringify(all));
+    renderRecent();
+  }
+  // 開頁：暫存裡有、紀錄裡沒有的補上（完成檔有會議名稱和開始時間）
+  function histEnsure(recs) {
+    const have = new Set(histAll().map((h) => h.p));
+    recs.slice().sort((a, b) => (a.kind === "complete" ? 0 : 1) - (b.kind === "complete" ? 0 : 1)).forEach((r) => {
+      if (have.has(r.prefix)) return;
+      have.add(r.prefix);
+      const c = r.kind === "complete" && r.content;
+      histPut(r.prefix, c ? { n: c.meeting, t: Date.parse(c.start) || histFromPrefix(r.prefix).t, s: c.segments || 0 } : {});
+    });
+  }
+  // 超過 2 天（昨天以前加進來的）自動清掉；還有東西在手機上沒傳完的留著
+  function histClean() {
+    const d = new Date(); d.setDate(d.getDate() - 1);
+    const from = ymd(d), live = new Set(lastRecs.map((r) => r.prefix));
+    const all = histAll(), keep = all.filter((h) => ymd(new Date(h.a || h.t)) >= from || live.has(h.p));
+    if (keep.length !== all.length) lsSet(HIST_KEY, JSON.stringify(keep));
+    return keep;
+  }
+  const R_OK = { cls: "ok", text: "已上傳" }, R_FAIL = { cls: "ng", text: "沒傳上去", retry: true };
+  function recentState(h) {
+    const busy = (g) => ({ cls: "busy", text: g.n ? "上傳中 " + Math.min(g.up + 1, g.n) + "/" + g.n + " 段" : "上傳中" });
+    if (h.f) { // 上傳錄音檔
+      if (fs.prefix === h.p && fs.busy) return busy({ up: fs.files.filter((f) => f.done).length, n: fs.files.length });
+      return h.st === "ok" ? R_OK : R_FAIL; // busy 但沒在傳＝上傳途中重新整理過
+    }
+    const m = meetings.get(h.p);
+    if (m && m === meeting) return { cls: "busy", text: "錄音中" };
+    const recs = lastRecs.filter((r) => r.prefix === h.p);
+    if ((m && m.cancelled) || h.st === "cancelled" || recs.some((r) => r.kind === "cancel")) return { cls: "off", text: "已取消" };
+    if ((m && m.noAudio) || h.st === "none") return { cls: "ng", text: "沒錄到聲音" };
+    const left = recs.filter((r) => r.status !== "recording");
+    if (left.some((r) => r.status === "failed")) return R_FAIL;
+    if (left.length || (m && m.end && !m.completeSent)) return busy(segProg(h.p, left));
+    if (h.st === "ok" || (m && m.completeSent)) return R_OK;
+    // 手機上已經沒有這場的東西：完成檔只有收到成功回應才會從手機刪掉；一段都沒有的完成檔開頁時會刪掉
+    return h.s > 0 ? R_OK : { cls: "ng", text: "沒錄到聲音" };
+  }
+  // 今天不寫日期；昨天寫「昨天」；更早（還有東西沒傳完、或上傳錄音檔選了前幾天的會議）寫月/日
+  function dayLabel(t) {
+    const d = new Date(t), y = new Date(); y.setDate(y.getDate() - 1);
+    return ymd(d) === today() ? "" : ymd(d) === ymd(y) ? "昨天" : (d.getMonth() + 1) + "/" + d.getDate();
+  }
+  function retryRecent(h) {
+    if (!h.f) { retryAll("重送"); return; }
+    // 上傳錄音檔：檔案只在記憶體，重新整理過就要重新選
+    if (fs.prefix === h.p && fs.files.length && !fs.busy) { uploadFiles(); return; }
+    toast("錄音檔要重新選一次", true);
+    openFile();
+  }
+  function renderRecent() {
+    if (!recsReady) { $("recentBox").hidden = true; return; }
+    const list = histClean().sort((a, b) => (b.a || b.t) - (a.a || a.t)).slice(0, HIST_MAX);
+    const box = $("recentList"); box.textContent = "";
+    list.forEach((h) => {
+      const s = recentState(h);
+      const row = el("div", "rc"); row.dataset.p = h.p; row.dataset.st = s.text;
+      const t = el("span", "t mono", HM(h.t));
+      const dl = dayLabel(h.t);
+      if (dl) t.append(el("small", "", dl));
+      const st = el("span", "st " + s.cls);
+      if (s === R_OK) st.append(svgIcon("i-check"));
+      st.append(el("span", "", s.text));
+      if (s.retry) st.append(smallBtn("重送", "btn small", () => retryRecent(h)));
+      row.append(t, el("span", "ti", h.n), st);
+      box.append(row);
+    });
+    $("recentBox").hidden = !list.length;
   }
 
   $("btnRetry").addEventListener("click", () => retryAll("全部重送"));
@@ -1204,9 +1315,14 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   let selId = "", selAuto = true, lastEvRender = 0;
   const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
 
-  async function loadEvents(why) {
-    if (evLoading) return;
-    if (!cfg.fake() && !cfg.url()) { evState = "nocfg"; renderEvents(); return; }
+  // 讀取中再呼叫：回傳同一個讀取（不重複送）；結果 "ok"｜"fail"｜"nocfg"
+  let evPromise = null, evLoadedAt = 0;
+  function loadEvents(why) {
+    if (!evPromise) evPromise = fetchEvents(why).finally(() => { evPromise = null; evLoadedAt = Date.now(); });
+    return evPromise;
+  }
+  async function fetchEvents(why) {
+    if (!cfg.fake() && !cfg.url()) { evState = "nocfg"; renderEvents(); return "nocfg"; }
     evLoading = true;
     if (!events) { evState = "loading"; renderEvents(); }
     const v = await request({ action: "todayEvents" }, EVENT_RETRY_WAIT, null, "讀取行事曆");
@@ -1222,6 +1338,20 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
       log("讀不到行事曆（" + why + "）：" + evErr);
     }
     renderEvents();
+    return v.ok ? "ok" : "fail";
+  }
+  // 右上角的重新讀取（v5.4）：按下去圖示就轉（至少 0.6 秒，免得一閃而過），讀完跳「已更新」，失敗跳 warn；讀取中再按只會繼續轉
+  let refreshing = false;
+  function spinRefresh(on) { ["btnEvRefresh", "btnEvRefresh2"].forEach((id) => $(id).classList.toggle("spin", on)); }
+  async function refreshTap() {
+    if (refreshing) return;
+    refreshing = true; spinRefresh(true);
+    const t0 = Date.now();
+    const r = await loadEvents("重新讀取");
+    await sleep(Math.max(0, 600 - (Date.now() - t0)));
+    refreshing = false; spinRefresh(false);
+    if (r === "ok") toast("已更新");
+    else toast(r === "nocfg" ? "還沒設定連線，讀不到行事曆" : events ? "更新失敗，顯示的是上次讀到的" : "讀不到行事曆，請稍後再試", true);
   }
 
   function evClass(e, now) {
@@ -1311,8 +1441,8 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     const manual = !selId && manualAllowed();
     $("manualBox").hidden = !manual;
     $("btnStart").disabled = recBusy || !(selId || (manual && $("meetingName").value.trim()));
-    // 還沒選會議時，按鈕直接寫要做什麼
-    $("btnStart").textContent = selId || manual ? "開始錄音" : evState === "loading" ? "讀取今天的會議…" :
+    // 還沒選會議時，按鈕直接寫要做什麼；按了開始、還在開麥克風時寫「準備錄音…」（v5.4：按下去要看得到反應）
+    $("btnStart").textContent = recBusy ? "準備錄音…" : selId || manual ? "開始錄音" : evState === "loading" ? "讀取今天的會議…" :
       events && events.some((e) => !isDone(e)) ? "先選上面的會議" : "用下面的「臨時會議」";
   }
 
@@ -1705,6 +1835,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
       const blob = new Blob(seg.chunks, { type: type });
       if (!blob.size) { saved(); rows.delete(name); renderUploads(); log(name + " 沒有錄到資料，略過"); return; }
       m.segments++; m.lastNo = Math.max(m.lastNo || 0, seg.no);
+      histPut(m.prefix, { s: m.segments });
       const rec = { kind: "segment", name: name, prefix: m.prefix, mimeType: type.split(";")[0],
         blob: blob, status: "pending", createdAt: Date.now() };
       await store.put(rec);
@@ -1746,6 +1877,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
       log("會議結束：" + m.name + "，共 " + m.segments + " 段（" + REASON[m.endReason] + "）");
     } else {
       m.noAudio = true;
+      histPut(m.prefix, { st: "none" });
       await store.del(completeName(m));
       rows.delete(completeName(m));
       log("會議結束，但沒有錄到任何一段：" + m.name);
@@ -1834,6 +1966,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
       segments: 0, segNo: 0, saves: [], status: "recording", end: "", endReason: "", completeSent: false, remind: 0 };
     if (quickRes) quickRes.mine = m;
     meetings.set(m.prefix, m);
+    histPut(m.prefix, { n: m.name, t: m.t0, a: m.t0, s: 0, st: "rec" });
     return m;
   }
 
@@ -1895,7 +2028,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     if (last) last.saved.then(() => { if (!meeting) closeMic(); }); else closeMic();
     disarmEnd();
     // 先顯示「上傳中」：完成檔送出前不能出現上一場的「可以關掉了」
-    upNow = { kind: "busy", title: busyTitle || "上傳中", next: "先不要關掉這個頁面，請保持網路", small: "" }; renderDone();
+    upNow = { kind: "busy", title: busyTitle || "上傳中", next: keepText(), small: "" }; renderDone();
     show("done");
     $("endBanner").hidden = true; $("stoppedBanner").hidden = true; $("silentBanner").hidden = true; $("headsetBanner").hidden = true;
     updateStartBtn(); renderEvents(); renderUploads();
@@ -1917,6 +2050,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     if (!m) return;
     m.cancelled = true; cancelledHere.add(m.prefix);
     m.end = new Date().toISOString(); m.endReason = "cancel"; m.status = "done";
+    histPut(m.prefix, { st: "cancelled" });
     lastDone = ""; lastCancel = null;
     stopRecording("取消中");
     const recs = (await store.all()).filter((r) => r.prefix === m.prefix && r.kind !== "cancel");
@@ -2112,7 +2246,9 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   // v5.3：沒在錄音時也記 AudioContext 狀態、試著 resume（下一場開始時還會再確認一次，不行就重建）
   document.addEventListener("visibilitychange", async () => {
     if (document.hidden) { hiddenAt = Date.now(); log("切到背景" + (audioCtx ? "（AudioContext " + audioCtx.state + "）" : "")); return; }
-    autoRetry("回到畫面"); loadEvents("回到畫面");
+    autoRetry("回到畫面");
+    // v5.4：在首頁、而且離上次讀取超過 1 分鐘才自動重新讀（不跳 toast）；錄音中照舊每 5 分鐘讀一次
+    if (screen === "start" && Date.now() - evLoadedAt > MIN) loadEvents("回到畫面");
     log("回到畫面（離開 " + Math.round((Date.now() - hiddenAt) / 1000) + " 秒" + (audioCtx ? "，AudioContext " + audioCtx.state : "") + "）");
     if (audioCtx && audioCtx.state !== "running" && audioCtx.state !== "closed") await within(audioCtx.resume().catch(() => {}), 1500);
     if (!meeting) return;
@@ -2142,6 +2278,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     Object.keys(SCREENS).forEach((k) => { $(SCREENS[k]).hidden = k !== name; });
     if (STRIP_SLOT[name]) $(STRIP_SLOT[name]).append($("strips"));
     renderUpStrip();
+    if (name === "start") renderRecent();
     if (name === "setup") renderSetup();
     window.scrollTo(0, 0);
   }
@@ -2151,16 +2288,39 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   // ---------- 設定頁 ----------
   function openSettings() {
     if (screen !== "settings") backTo = screen;
-    $("cfgUrl").value = cfg.url(); $("cfgKey").value = cfg.key();
+    $("cfgKey").value = cfg.key();
     $("cfgMsg").textContent = "";
-    // v5.2：平常只看到 key；網址收在「進階」，沒設定時提醒去要設定連結
-    $("cfgAskNote").hidden = !!cfg.url() || !!cfg.fake();
-    renderTheme(); renderDiag();
+    keyOpen = false;
+    renderDiag();
     show("settings");
+    checkConn();
   }
   function closeSettings() {
+    connSeq++; // 還在確認的連線結果不用了
     if (backTo === "start" || backTo === "setup") goHome(); else show(backTo);
   }
+  // 連線（v5.4）：打開設定就用存好的網址和 key 測一次（只測、不存）
+  // nocfg 還沒設定（請向 Jacky 要設定連結）｜testing 確認連線中…｜ok 已連線＋更換 key｜fail 紅字原因＋key 欄直接展開
+  let connState = "", connSeq = 0, keyOpen = false;
+  function renderConn(st, why) {
+    connState = st;
+    const none = st === "nocfg";
+    $("connRow").hidden = none; $("cfgAskNote").hidden = !none;
+    $("connText").textContent = st === "testing" ? "確認連線中…" : st === "ok" ? "已連線" : st === "fail" ? "連線失敗：" + why : "";
+    $("connText").className = "grow" + (st === "fail" ? " ng" : st === "testing" ? " wait" : "");
+    $("connOk").toggleAttribute("hidden", st !== "ok"); // svg 沒有 .hidden 屬性
+    $("btnChangeKey").hidden = st !== "ok" || keyOpen;
+    $("keyBox").hidden = none || !(keyOpen || st === "fail");
+  }
+  async function checkConn() {
+    const seq = ++connSeq;
+    if (!cfg.fake() && !cfg.url()) { renderConn("nocfg"); return; }
+    renderConn("testing");
+    const v = await request({ action: "ping" }, EVENT_RETRY_WAIT, null, "確認連線");
+    if (seq !== connSeq || screen !== "settings") return;
+    renderConn(v.ok ? "ok" : "fail", v.ok ? "" : v.reject || v.fail);
+  }
+  $("btnChangeKey").addEventListener("click", () => { keyOpen = true; renderConn(connState); $("cfgKey").focus(); });
   // 測試並儲存：先用輸入的網址和 key 打 ping，成功才存；失敗直接說原因
   async function testAndSave(url, key, msgEl, btn, waits) {
     url = url.trim(); key = key.trim();
@@ -2170,7 +2330,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     let v;
     try { v = await request({ action: "ping" }, waits || [], null, "測試連線"); } finally { cfgOverride = null; btn.disabled = false; }
     if (!v.ok) {
-      msgEl.textContent = "連線失敗：" + (v.reject || v.fail) + "（" + VERSION + "）"; msgEl.className = "msg ng";
+      msgEl.textContent = "連線失敗：" + (v.reject || v.fail); msgEl.className = "msg ng"; // 版本在診斷資訊（v5.4 不放在畫面上）
       return false;
     }
     const ok = lsSet("mv_api_url", url) && lsSet("mv_upload_key", key);
@@ -2183,7 +2343,13 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   $("btnGear2").addEventListener("click", openSettings);
   $("btnRejectGear").addEventListener("click", openSettings);
   $("btnClose").addEventListener("click", closeSettings);
-  $("btnSave").addEventListener("click", () => testAndSave($("cfgUrl").value, $("cfgKey").value, $("cfgMsg"), $("btnSave")));
+  // 更換 key：用存好的網址測新的 key，成功才存、收起來（v5.4 設定頁沒有網址欄）
+  $("btnSave").addEventListener("click", async () => {
+    connSeq++;
+    if (await testAndSave(cfg.url(), $("cfgKey").value, $("cfgMsg"), $("btnSave"))) {
+      keyOpen = false; $("cfgMsg").textContent = ""; renderConn("ok"); toast("連線 OK，已儲存");
+    }
+  });
   // 第一次設定：測試連線成功就存、回首頁（v5.3 拿掉「我是誰」）
   async function setupSave(waits) {
     events = null; selAuto = true;
@@ -2201,20 +2367,6 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     });
   }
   eyeToggle("setupEye", "setupKey"); eyeToggle("cfgEye", "cfgKey");
-
-  // 外觀：自動（跟系統，預設）／亮色／暗色，存在這支手機（讀不到就用自動）
-  function applyTheme() {
-    const t = lsGet("mv_theme");
-    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
-    else delete document.documentElement.dataset.theme;
-  }
-  function renderTheme() {
-    const t = lsGet("mv_theme") || "auto";
-    document.querySelectorAll("#themeSeg button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.theme === t ? "true" : "false"));
-  }
-  document.querySelectorAll("#themeSeg button").forEach((b) => b.addEventListener("click", () => {
-    lsSet("mv_theme", b.dataset.theme === "auto" ? "" : b.dataset.theme); applyTheme(); renderTheme();
-  }));
 
   function refreshBanners() {
     ["fakeBanner", "fakeBanner2", "fakeBanner3", "fakeBanner4"].forEach((id) => { $(id).hidden = !cfg.fake(); });
@@ -2396,8 +2548,9 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   const FILE_MAX = 25 * 1048576;   // base64 後約 33 MB；Apps Script 單次上限約 50 MB（需要查證）
   const FILE_LONG = 30 * 60;       // 超過 30 分鐘只提醒
   const WD = "日一二三四五六";
-  const fs = { step: 1, date: "", events: null, evErr: "", loading: false, sel: null, manual: false, files: [], busy: false, result: "" };
-  const ymd = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  // auto：會議是依檔案時間自動選的｜picked：使用者在「是哪一場？」自己動過（不再自動選）｜guessT：等那天的會議讀完再猜｜prefix：上傳中／傳過的檔名前綴
+  const fs = { step: 1, date: "", events: null, evErr: "", loading: false, sel: null, manual: false, files: [], busy: false, result: "",
+    auto: false, picked: false, guessT: 0, prefix: "" };
   const mmss = (s) => Math.floor(s / 60) + ":" + pad(Math.round(s % 60));
   function fileDays() {
     const out = [];
@@ -2408,10 +2561,11 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     return out;
   }
   function openFile() {
-    Object.assign(fs, { step: 1, date: today(), events: null, evErr: "", sel: null, manual: false, files: [], busy: false, result: "" });
+    Object.assign(fs, { step: 1, date: today(), events: null, evErr: "", sel: null, manual: false, files: [], busy: false, result: "",
+      auto: false, picked: false, guessT: 0, prefix: "" });
     $("fileMName").value = ""; $("fileMDate").value = today(); $("fileMTime").value = "";
     $("fileMDate").max = today(); $("fileMDate").min = fileDays()[7].v;
-    show("file"); renderFile(); loadFileEvents();
+    show("file"); renderFile();
   }
   async function loadFileEvents() {
     const date = fs.date;
@@ -2424,7 +2578,39 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     if (v.ok) fs.events = v.r.events.map((e) => ({ id: String(e.id), title: String(e.title || "（沒有標題）"), start: Date.parse(e.start), end: Date.parse(e.end),
       guests: typeof e.guests === "number" ? e.guests : null })).filter((e) => e.id && isFinite(e.start) && isFinite(e.end));
     else fs.evErr = v.reject || v.fail;
+    if (fs.guessT && !fs.picked) applyGuess();
     renderFile();
+  }
+  // 檔案時間（v5.4）：所有檔案裡最早的 lastModified；離現在不到 2 分鐘（有些手機給的是選檔那一刻）或超過 7 天前就不用
+  // iPhone「檔案」「語音備忘錄」給的 lastModified 準不準需要查證（只在電腦和模擬環境驗證過）
+  function fileTime() {
+    const ts = fs.files.map((f) => f.file.lastModified).filter((t) => t > 0);
+    if (!ts.length) return 0;
+    const t = Math.min.apply(null, ts), ago = Date.now() - t;
+    return ago < 2 * MIN || ago > 7 * 1440 * MIN ? 0 : t;
+  }
+  // 選完檔進「是哪一場？」：使用者還沒自己選過，就依檔案時間選日期，讀完那天的會議再猜是哪一場；手動輸入也預設帶檔案時間
+  function enterWhich() {
+    fs.step = 2;
+    if (!fs.picked) {
+      const t = fileTime();
+      fs.sel = null; fs.manual = false; fs.auto = false; fs.guessT = t;
+      fs.date = t ? ymd(new Date(t)) : today();
+      if (t) { $("fileMDate").value = ymd(new Date(t)); $("fileMTime").value = HM(t); }
+      loadFileEvents();
+    } else if (!fs.events && !fs.loading) loadFileEvents();
+    renderFile();
+  }
+  // 開始時間 ≤ 檔案時間 ≤ 結束時間＋60 分鐘；符合的不只一場 → 開始時間最接近的；猜不到 → 照舊從今天自己選
+  function applyGuess() {
+    const t = fs.guessT;
+    fs.guessT = 0;
+    if (fs.evErr) return; // 讀不到那天的會議：留在那天，讓使用者用「沒有在日曆上」或換日期
+    const hit = (fs.events || []).filter((e) => e.start <= t && t <= e.end + 60 * MIN && !isDone(e))
+      .sort((a, b) => Math.abs(a.start - t) - Math.abs(b.start - t))[0];
+    log("上傳錄音檔：檔案時間 " + ymd(new Date(t)) + " " + HM(t) + (hit ? "，自動選「" + hit.title + "」" : "，猜不到是哪一場"));
+    if (hit) { fs.sel = hit; fs.auto = true; return; }
+    if (fs.date !== today()) { fs.date = today(); loadFileEvents(); }
   }
   function fileMeeting() {
     if (fs.manual) {
@@ -2455,7 +2641,9 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     add.forEach(checkFile);
     fs.files = fs.files.concat(add).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     add.forEach(readDuration);
-    log("選了 " + add.length + " 個錄音檔：" + add.map((f) => f.name + "（" + mb(f.size) + "）").join("、"));
+    // 檔案時間記進紀錄：iPhone 給的 lastModified 準不準，看診斷資訊就知道
+    log("選了 " + add.length + " 個錄音檔：" + add.map((f) => f.name + "（" + mb(f.size) + "，檔案時間 " +
+      (f.file.lastModified ? ymd(new Date(f.file.lastModified)) + " " + HM(f.file.lastModified) : "沒有") + "）").join("、"));
     renderFile();
   }
   function moveFile(i, d) {
@@ -2472,31 +2660,36 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   const filePrefix = (m) => prefixOf(m.start, cleanName(m.name) || "會議");
   const fileSegName = (m, f, i) => filePrefix(m) + "_" + pad(i + 1) + "." + f.ext;
   function renderFile() {
+    renderRecent(); // 從首頁按「重送」時，上傳進度在「最近的錄音」
     if (screen !== "file") return;
     const st = fs.step;
-    $("fileTitle").textContent = ["", "選會議", "選檔案", fs.result === "done" ? "上傳完成" : "確認上傳"][st];
+    $("fileTitle").textContent = ["", "上傳錄音檔", "是哪一場？", fs.result === "done" ? "上傳完成" : "確認上傳"][st];
     $("fileBack").textContent = st === 1 || fs.result ? (fs.result ? "首頁" : "取消") : "上一步";
     $("fileBack").disabled = fs.busy;
     $("fileStep1").hidden = st !== 1; $("fileStep2").hidden = st !== 2; $("fileStep3").hidden = st !== 3;
     let next = "下一步", can = false;
-    if (st === 1) {
+    if (st === 2) {
+      // 使用者自己動過（換日期、點會議、沒有在日曆上）就不再自動選
       chipRow($("fileDates"), fileDays().map((d) => d.v), fs.date, (v) => fileDays().find((d) => d.v === v).label,
-        (v) => { fs.date = v; fs.sel = null; loadFileEvents(); });
+        (v) => { fs.date = v; fs.sel = null; fs.auto = false; fs.picked = true; fs.guessT = 0; loadFileEvents(); });
       const box = $("fileEvList"); box.textContent = "";
-      const now = Date.now();
+      // 上傳錄音檔選的都是開過的會：不標「已結束」、不變灰（v5.4：選到的那場看起來像不能點）
       (fs.events || []).slice().sort((a, b) => a.start - b.start).forEach((e) => {
-        box.append(evButton(e, evClass(e, now), !fs.manual && fs.sel && fs.sel.id === e.id, (x) => { fs.sel = x; fs.manual = false; renderFile(); }));
+        box.append(evButton(e, "", !fs.manual && fs.sel && fs.sel.id === e.id,
+          (x) => { fs.sel = x; fs.manual = false; fs.auto = false; fs.picked = true; renderFile(); }));
       });
       box.hidden = !box.childNodes.length;
+      $("fileGuess").hidden = !(fs.auto && fs.sel && !fs.manual);
       $("fileEvMsg").textContent = fs.loading ? "讀取會議…" : fs.evErr ? "讀不到這天的會議（" + fs.evErr + "）：可以用下面的「沒有在日曆上」" :
         fs.events && !fs.events.length ? "這天沒有硬體組的會議：用下面的「沒有在日曆上」" : "";
       $("fileEvMsg").className = "msg" + (fs.evErr ? " warn" : "");
       $("fileManualBtn").classList.toggle("sel", fs.manual);
       $("fileManual").hidden = !fs.manual;
       can = !!fileMeeting();
-    } else if (st === 2) {
-      const m = fileMeeting();
-      $("fileFor").textContent = m.name + "｜" + ymd(m.start) + " " + HM(m.start);
+    } else if (st === 1) {
+      // 還沒選檔：大的藍色按鈕；選好之後改成一般按鈕（藍色主要按鈕留給下面的「下一步」）
+      $("btnPickFiles").textContent = fs.files.length ? "再加錄音檔" : "選擇錄音檔";
+      $("btnPickFiles").className = "btn " + (fs.files.length ? "plain" : "primary");
       const box = $("fileList"); box.textContent = "";
       fs.files.forEach((f, i) => {
         const row = el("div", "item file");
@@ -2511,7 +2704,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
       });
       box.hidden = !fs.files.length;
       const bad = fs.files.filter((f) => f.err).length;
-      $("fileMsg").textContent = !fs.files.length ? "還沒選檔案" : bad ? "有 " + bad + " 個檔案不能上傳：移除後才能繼續" : "";
+      $("fileMsg").textContent = bad ? "有 " + bad + " 個檔案不能上傳：移除後才能繼續" : "";
       $("fileMsg").className = "msg" + (bad ? " ng" : "");
       can = fs.files.length > 0 && !bad;
     } else {
@@ -2526,16 +2719,18 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
       $("fileProg").hidden = true;
       $("fileDone").hidden = !started;
       if (started) {
-        const n = fs.files.length + 1, up = fs.files.filter((f) => f.done).length;
-        const left = fs.files.length - up;
-        const st = fs.busy ? ["busy", "i-upload", "上傳中（" + Math.min(up + 1, n) + "/" + n + "）", "先不要關掉這個頁面，請保持網路"]
-          : fs.result === "done" ? ["", "i-done", "已上傳完成，可以關掉了", "約 30 分鐘後會出現在「硬體組會議記錄2026」"]
+        // v5.4 進度只算錄音段數；選的檔只在記憶體（不進暫存），上傳中關掉頁面要重新選，所以照舊「先不要關掉」
+        const n = fs.files.length, up = fs.files.filter((f) => f.done).length;
+        const left = n - up;
+        const st = fs.busy ? ["busy", "i-upload", "上傳中（第 " + Math.min(up + 1, n) + " 段，共 " + n + " 段）", "先不要關掉這個頁面，請保持網路"]
+          : fs.result === "done" ? ["", "i-done", "已上傳完成，可以關掉了", DONE_NEXT]
           : fs.result === "dup" ? ["busy", "i-alert", "這場已經有錄音了", "不用再上傳，可以關掉了"]
           : ["ng", "i-alert", left ? "還有 " + left + " 段沒傳上去" : "還差最後一步沒送出", "錄音檔還在手機上。連上網路後按「全部重送」，傳完前先不要關掉"];
         $("fileDone").className = "done-head" + (st[0] ? " " + st[0] : "");
         $("fileDoneIco").querySelector("use").setAttribute("href", "#" + st[1]);
         $("fileDoneTitle").textContent = st[2];
         $("fileDoneNote").textContent = st[3];
+        $("fileDoneSmall").textContent = st[4] || ""; $("fileDoneSmall").hidden = !st[4];
       }
       next = fs.result === "done" || fs.result === "dup" ? "回到首頁" : fs.result === "fail" ? "全部重送" : fs.busy ? "上傳中…" : "上傳並整理";
       can = !fs.busy;
@@ -2547,6 +2742,8 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     const m = fileMeeting();
     fs.busy = true; fs.result = ""; $("fileUpMsg").textContent = ""; renderFile();
     const prefix = filePrefix(m);
+    fs.prefix = prefix;
+    histPut(prefix, { n: m.name, t: m.start.getTime(), a: Date.now(), s: fs.files.length, st: "busy", f: 1 }); // 首頁「最近的錄音」
     log("上傳錄音檔：" + prefix + "，" + fs.files.length + " 段");
     for (let i = 0; i < fs.files.length; i++) {
       const f = fs.files[i];
@@ -2559,11 +2756,13 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
       if (v.ok && i === 0 && v.r.duplicate && !f.retried) {
         // 第 1 段已經在雲端硬碟：這場已經錄過（或傳過），停下來，不送完成檔
         f.st = "已經有了"; fs.busy = false; fs.result = "dup";
+        histPut(prefix, { st: "ok" });
         log("上傳錄音檔停止：" + body.name + " 已經存在，不送完成檔");
         renderFile(); return;
       }
       if (!v.ok) {
         f.st = "失敗"; f.err = v.reject || v.fail; fs.busy = false; fs.result = "fail";
+        histPut(prefix, { st: "fail" });
         log("上傳錄音檔失敗：" + body.name + "（" + VERSION + "：" + (v.reject || v.fail) + "）");
         renderFile(); return;
       }
@@ -2577,10 +2776,12 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     fs.busy = false;
     if (!v.ok) {
       fs.result = "fail";
+      histPut(prefix, { st: "fail" });
       log("上傳錄音檔：完成檔失敗（" + (v.reject || v.fail) + "）");
       renderFile(); return;
     }
     fs.result = "done";
+    histPut(prefix, { st: "ok" });
     if (m.eventId) markDone(m.eventId);
     log("上傳錄音檔完成：" + prefix + "，" + fs.files.length + " 段＋完成檔");
     renderFile();
@@ -2588,10 +2789,11 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   $("btnFile").addEventListener("click", openFile);
   $("btnPickFiles").addEventListener("click", () => $("fileInput").click());
   $("fileInput").addEventListener("change", () => { addFiles($("fileInput").files); $("fileInput").value = ""; });
-  $("fileManualBtn").addEventListener("click", () => { fs.manual = !fs.manual; if (fs.manual) fs.sel = null; renderFile(); });
+  $("fileManualBtn").addEventListener("click", () => { fs.manual = !fs.manual; fs.picked = true; fs.auto = false; if (fs.manual) fs.sel = null; renderFile(); });
   ["fileMName", "fileMDate", "fileMTime"].forEach((id) => $(id).addEventListener("input", renderFile));
   $("fileNext").addEventListener("click", () => {
-    if (fs.step < 3) { fs.step++; renderFile(); return; }
+    if (fs.step === 1) { enterWhich(); return; }
+    if (fs.step === 2) { fs.step = 3; renderFile(); return; }
     if (fs.result === "done" || fs.result === "dup") { goHome(); return; }
     uploadFiles();
   });
@@ -2615,17 +2817,16 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     startMeeting({ name: raw });
   });
   $("meetingName").addEventListener("input", updateStartBtn);
-  $("btnEvRefresh").addEventListener("click", () => loadEvents("重新讀取"));
-  $("btnEvRefresh2").addEventListener("click", () => loadEvents("重新讀取"));
+  $("btnEvRefresh").addEventListener("click", refreshTap);
+  $("btnEvRefresh2").addEventListener("click", refreshTap);
 
   $("btnHome").addEventListener("click", () => { $("autoEndBanner").hidden = true; goHome(); });
   $("btnTipsOk").addEventListener("click", () => { lsSet("mv_tips_seen", "1"); $("tipsCard").hidden = true; });
 
   // ---------- 開頁 ----------
   $("ver").textContent = VERSION;
-  applyTheme();
   $("lineBanner").hidden = !/\bLine\//.test(navigator.userAgent);
-  $("tipsCard").hidden = !!lsGet("mv_tips_seen"); // 開始前的提醒只顯示一次，之後在設定頁的說明
+  $("tipsCard").hidden = !!lsGet("mv_tips_seen"); // 開始前的提醒只顯示一次（v5.4 設定頁沒有說明：其他提醒都在需要的時候出現）
   const linked = readSetupLink(); // 用設定連結打開：網址和 key 已經填好
   show(linked ? "setup" : "start");
   refreshBanners();
@@ -2687,6 +2888,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   (async function restore() {
     try {
       const recs = await store.all();
+      histEnsure(recs); // 還在手機上、但「最近的錄音」沒有的補上
       const live = recs.filter((r) => r.kind === "complete" && r.status === "recording").sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       let resume = null;
       for (const r of live) {
@@ -2698,9 +2900,12 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
       if (resume) resumeMeeting(resume, recs);
       const left = (await store.all()).length;
       if (left) log("手機上有 " + left + " 個檔案還沒上傳");
+      recsReady = true;
       await renderUploads();
       autoRetry("開頁");
     } catch (e) { log("讀取待重送清單失敗：" + e.message); }
+    recsReady = true;
+    renderRecent();
   })();
   renderEvents();
   loadEvents("開頁");
