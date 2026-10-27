@@ -1,6 +1,6 @@
 {
-  "name": "Meeting View 錄音",
-  "short_name": "MV 錄音",
+  "name": "Meet書 錄音",
+  "short_name": "Meet書",
   "start_url": "record.html?v=5",
   "scope": "./",
   "display": "standalone",

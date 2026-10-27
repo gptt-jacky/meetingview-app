@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Meeting View 手機錄音頁：分段錄音（×64 放大、64 kbps）、先存手機再上傳到 Apps Script
+<!-- Meet書 手機錄音頁：分段錄音（×64 放大、64 kbps）、每段切完馬上上傳到 Apps Script（邊錄邊傳），手機留一份備份、斷線時自動補傳
      v2：嚴格判斷上傳成功、掉回應自動重送／定時再試、上傳提示、下載到手機備援
      v3：從今天的行事曆選會議、結束三層配套（可復原／時間到提醒／超時自動結束）、連開會議一鍵切換
      v4：臨時會議先選與會人員（部門 → 組），建日曆時寄邀請
@@ -20,17 +20,19 @@
            （拿掉說明、外觀、進階網址，一律跟手機亮暗）、完成畫面進度只算錄音段數、上傳錄音檔先選檔再依檔案時間猜是哪一場
      v5.5：錄錯場的機會更小、音量自動調（10/27 iPhone 試用回饋）：拿掉分享給同事、錄音中不能切換會議（只能結束這場）、
            開始時間和會議時間差超過 10 分鐘先確認、右上角按鈕往下移離開 iOS 霧化區、放大倍數改成自動調整（×16–×128，?gain= 固定）
+     v5.5.1：產品正式改名「Meet書」（10/27 Jacky）：分頁標題、主畫面名稱、診斷資訊第一行；功能不動。
+             內部變數、mv_ 開頭的 localStorage key、doGet 的 service 維持 Meeting View（改了舊資料讀不到）
      放在公開的 GitHub Pages：不能寫死任何網址、key、email、會議內容
      最後更新: 2026/10/27 -->
 <html lang="zh-Hant-TW">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meeting View 錄音</title>
+<title>Meet書 錄音</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="MV 錄音">
+<meta name="apple-mobile-web-app-title" content="Meet書">
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.json">
@@ -560,7 +562,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 <script>
 (function () {
   "use strict";
-  const VERSION = "record v5.5（10/27）";
+  const VERSION = "record v5.5.1（10/27）";
   const $ = (id) => document.getElementById(id);
   const pad = (n) => String(n).padStart(2, "0");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -2374,7 +2376,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   function diagText() {
     const d = new Date();
     const out = [
-      "Meeting View 錄音頁診斷資訊",
+      "Meet書 錄音頁診斷資訊",
       "版本：" + VERSION,
       "現在：" + ymd(d) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()),
       "放大倍數：" + gainText(),
