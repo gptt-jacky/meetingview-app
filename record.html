@@ -22,6 +22,8 @@
            開始時間和會議時間差超過 10 分鐘先確認、右上角按鈕往下移離開 iOS 霧化區、放大倍數改成自動調整（×16–×128，?gain= 固定）
      v5.5.1：產品正式改名「Meet書」（10/27 Jacky）：分頁標題、主畫面名稱、診斷資訊第一行；功能不動。
              內部變數、mv_ 開頭的 localStorage key、doGet 的 service 維持 Meeting View（改了舊資料讀不到）
+     v5.6：第一次設定只輸入一個「設定碼」（10/27 Jacky）：設定碼＝base64url({url, key})，和 #setup= 同格式；拿掉「進階」部署網址欄；
+           設定頁「更換 key」可以貼設定碼（網址和 key 一起換）或只貼 key（網址不變）；舊的 #setup= 連結照樣能用
      放在公開的 GitHub Pages：不能寫死任何網址、key、email、會議內容
      最後更新: 2026/10/27 -->
 <html lang="zh-Hant-TW">
@@ -276,25 +278,22 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 </svg>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<!-- A. 第一次設定（還沒有部署網址、也不是假上傳時） -->
+<!-- A. 第一次設定（還沒有部署網址、也不是假上傳時）：v5.6 只有一個「設定碼」欄位（網址＋key） -->
 <section class="screen" id="setupScr" hidden>
   <div class="wrap body">
     <div class="nav"></div>
     <h1>設定</h1>
     <div>
       <div class="list">
-        <div class="field keyrow" id="setupKeyRow"><label class="field" style="padding:0;flex:1">上傳 key<input type="password" id="setupKey" autocomplete="off" spellcheck="false"></label>
-          <button class="icon-btn" type="button" id="setupEye" aria-label="顯示 key"><svg class="ico"><use href="#i-eye"/></svg></button></div>
+        <div class="field keyrow" id="setupKeyRow"><label class="field" style="padding:0;flex:1">設定碼<input type="password" id="setupKey" autocomplete="off" spellcheck="false"></label>
+          <button class="icon-btn" type="button" id="setupEye" aria-label="顯示設定碼"><svg class="ico"><use href="#i-eye"/></svg></button></div>
       </div>
       <p class="msg ng" id="setupMsg" style="margin-top:8px"></p>
       <p class="foot-note" id="setupLinkNote" hidden>已從設定連結帶入網址和 key。</p>
-      <p class="foot-note" id="setupAskNote">沒有 key 的話，請向 Jacky 要設定連結，用那條連結打開就會自動填好。</p>
+      <p class="foot-note" id="setupAskNote">沒有設定碼的話，請向 Jacky 要。</p>
       <p class="foot-note">每支手機、每個瀏覽器只要設定一次。</p>
       <p class="foot-note" id="setupFmt"></p>
     </div>
-    <details class="more" id="setupAdv"><summary>進階</summary>
-      <div class="list"><label class="field">部署網址<input type="url" id="setupUrl" autocomplete="off" spellcheck="false" placeholder="貼上 Apps Script 的部署網址"></label></div>
-    </details>
   </div>
   <div class="bar"><div class="wrap"><button class="btn primary" id="btnSetupSave">完成設定</button></div></div>
 </section>
@@ -427,12 +426,12 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
         <div class="item" id="connRow"><svg class="ico" id="connOk" hidden><use href="#i-check"/></svg><span class="grow" id="connText"></span>
           <button class="text-btn" type="button" id="btnChangeKey" hidden>更換 key</button></div>
         <div id="keyBox" hidden>
-          <div class="field keyrow"><label class="field" style="padding:0;flex:1">上傳 key<input type="password" id="cfgKey" autocomplete="off" spellcheck="false"></label>
+          <div class="field keyrow"><label class="field" style="padding:0;flex:1">設定碼或 key<input type="password" id="cfgKey" autocomplete="off" spellcheck="false"></label>
             <button class="icon-btn" type="button" id="cfgEye" aria-label="顯示 key"><svg class="ico"><use href="#i-eye"/></svg></button></div>
           <div class="item"><button class="btn small primary" id="btnSave">測試並儲存</button><span class="msg" id="cfgMsg" style="padding:0"></span></div>
         </div>
       </div>
-      <p class="foot-note" id="cfgAskNote" hidden>還沒設定：請向 Jacky 要設定連結，用那條連結打開就會自動填好。</p>
+      <p class="foot-note" id="cfgAskNote" hidden>還沒設定：請向 Jacky 要設定碼。</p>
     </div>
     <div id="cfgDiagBox">
       <p class="cap">診斷資訊</p>
@@ -562,7 +561,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 <script>
 (function () {
   "use strict";
-  const VERSION = "record v5.5.1（10/27）";
+  const VERSION = "record v5.6（10/27）";
   const $ = (id) => document.getElementById(id);
   const pad = (n) => String(n).padStart(2, "0");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -2253,7 +2252,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     if (backTo === "start" || backTo === "setup") goHome(); else show(backTo);
   }
   // 連線（v5.4）：打開設定就用存好的網址和 key 測一次（只測、不存）
-  // nocfg 還沒設定（請向 Jacky 要設定連結）｜testing 確認連線中…｜ok 已連線＋更換 key｜fail 紅字原因＋key 欄直接展開
+  // nocfg 還沒設定（請向 Jacky 要設定碼）｜testing 確認連線中…｜ok 已連線＋更換 key｜fail 紅字原因＋key 欄直接展開
   let connState = "", connSeq = 0, keyOpen = false;
   function renderConn(st, why) {
     connState = st;
@@ -2277,7 +2276,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   // 測試並儲存：先用輸入的網址和 key 打 ping，成功才存；失敗直接說原因
   async function testAndSave(url, key, msgEl, btn, waits) {
     url = url.trim(); key = key.trim();
-    if (!cfg.fake() && !url) { msgEl.textContent = "還沒有部署網址：請向 Jacky 要設定連結，用那條連結打開"; msgEl.className = "msg ng"; return false; }
+    if (!cfg.fake() && !url) { msgEl.textContent = "還沒有部署網址：請向 Jacky 要設定碼"; msgEl.className = "msg ng"; return false; }
     btn.disabled = true; msgEl.textContent = "連線中…"; msgEl.className = "msg";
     cfgOverride = { url: url, key: key };
     let v;
@@ -2296,59 +2295,69 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   $("btnGear2").addEventListener("click", openSettings);
   $("btnRejectGear").addEventListener("click", openSettings);
   $("btnClose").addEventListener("click", closeSettings);
-  // 更換 key：用存好的網址測新的 key，成功才存、收起來（v5.4 設定頁沒有網址欄）
+  // 更換 key：貼設定碼 → 網址和 key 一起換；只貼 key（解不出設定碼）→ 用存好的網址測新的 key（v5.6）；成功才存、收起來
   $("btnSave").addEventListener("click", async () => {
     connSeq++;
-    if (await testAndSave(cfg.url(), $("cfgKey").value, $("cfgMsg"), $("btnSave"))) {
+    const c = parseSetupCode($("cfgKey").value);
+    if (await testAndSave(c ? c.url : cfg.url(), c ? c.key : $("cfgKey").value, $("cfgMsg"), $("btnSave"))) {
       keyOpen = false; $("cfgMsg").textContent = ""; renderConn("ok"); toast("連線 OK，已儲存");
     }
   });
-  // 第一次設定：測試連線成功就存、回首頁（v5.3 拿掉「我是誰」）
+  // 第一次設定：解設定碼 → 測試連線成功就存、回首頁（v5.3 拿掉「我是誰」；v5.6 只有設定碼，解不出來不送出）
   async function setupSave(waits) {
+    const c = parseSetupCode($("setupKey").value);
+    if (!c) { $("setupMsg").textContent = "這不是設定碼，請整串複製 Jacky 給的設定碼"; $("setupMsg").className = "msg ng"; return false; }
     events = null; selAuto = true;
-    if (await testAndSave($("setupUrl").value, $("setupKey").value, $("setupMsg"), $("btnSetupSave"), waits)) { fromLink = false; goHome(); return true; }
+    if (await testAndSave(c.url, c.key, $("setupMsg"), $("btnSetupSave"), waits)) { fromLink = false; goHome(); return true; }
     return false;
   }
   $("btnSetupSave").addEventListener("click", () => setupSave());
   // key 預設遮住，按眼睛顯示
-  function eyeToggle(btnId, inputId) {
+  function eyeToggle(btnId, inputId, what) {
     $(btnId).addEventListener("click", () => {
       const reveal = $(inputId).type === "password";
       $(inputId).type = reveal ? "text" : "password";
-      $(btnId).setAttribute("aria-label", reveal ? "遮住 key" : "顯示 key");
+      $(btnId).setAttribute("aria-label", (reveal ? "遮住" : "顯示") + what);
       $(btnId).querySelector("use").setAttribute("href", reveal ? "#i-eye-off" : "#i-eye");
     });
   }
-  eyeToggle("setupEye", "setupKey"); eyeToggle("cfgEye", "cfgKey");
+  eyeToggle("setupEye", "setupKey", "設定碼"); eyeToggle("cfgEye", "cfgKey", " key");
 
   function refreshBanners() {
     ["fakeBanner", "fakeBanner2", "fakeBanner3", "fakeBanner4"].forEach((id) => { $(id).hidden = !cfg.fake(); });
     if (screen === "start" && !cfg.fake() && !cfg.url()) show("setup");
   }
 
-  // ---------- 設定連結（v5.1）：#setup=<base64url({url,key})>，# 後面不會送到 GitHub Pages ----------
+  // ---------- 設定連結（v5.1）：#setup=<base64url({url,key})>，# 後面不會送到 GitHub Pages；v5.6 設定碼就是 #setup= 後面那段 ----------
   function b64urlDecode(s) {
     s = s.replace(/-/g, "+").replace(/_/g, "/");
     while (s.length % 4) s += "=";
     return new TextDecoder().decode(Uint8Array.from(atob(s), (c) => c.charCodeAt(0)));
+  }
+  // 設定碼 → {url, key}；解不出來（純 key、亂打的字）回 null。LINE 複製的可能多換行：先拿掉所有空白（設定碼本身沒有空白）
+  function parseSetupCode(s) {
+    s = String(s || "").replace(/\s+/g, "");
+    if (!/^[A-Za-z0-9_-]+$/.test(s)) return null;
+    try {
+      const c = JSON.parse(b64urlDecode(s));
+      return c && typeof c.url === "string" && typeof c.key === "string" && /^https:\/\//.test(c.url) ? { url: c.url, key: c.key } : null;
+    } catch (e) { return null; }
   }
   let fromLink = false;
   function readSetupLink() {
     const m = /^#setup=([A-Za-z0-9_-]+)$/.exec(location.hash);
     if (!m) return false;
     try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
-    try {
-      const c = JSON.parse(b64urlDecode(m[1]));
-      if (!c || typeof c.url !== "string" || typeof c.key !== "string") throw new Error("內容不對");
-      $("setupUrl").value = c.url; $("setupKey").value = c.key;
+    if (parseSetupCode(m[1])) {
+      $("setupKey").value = m[1]; // 和設定碼同格式：放進設定碼欄，按「完成設定」走同一條路
       fromLink = true;
       log("從設定連結帶入網址和 key");
-    } catch (e) { log("設定連結讀不出來：" + e.message); $("setupMsg").textContent = "設定連結讀不出來，請重新跟 Jacky 要一次，或自己填網址和 key"; }
+    } else { log("設定連結讀不出來"); $("setupMsg").textContent = "設定連結讀不出來，請向 Jacky 要設定碼"; }
     return true;
   }
   function renderSetup() {
-    // 從設定連結打開：網址和 key 都帶好了，自動測試連線、成功就直接到首頁（v5.3）；沒有連結：只看到 key，網址收在「進階」
-    $("setupKeyRow").hidden = fromLink; $("setupAdv").hidden = fromLink;
+    // 從設定連結打開：網址和 key 都帶好了，自動測試連線、成功就直接到首頁（v5.3）；沒有連結：只看到設定碼欄（v5.6 沒有「進階」）
+    $("setupKeyRow").hidden = fromLink;
     $("setupLinkNote").hidden = !fromLink; $("setupAskNote").hidden = fromLink;
     const f = recFormat();
     // v5.2：錄得了 m4a 就不說（技術細節在診斷資訊）；不能錄、只能錄 webm 才提醒
