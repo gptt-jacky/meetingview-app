@@ -39,12 +39,21 @@
            臨時會議按結束送 endEvent、取消錄音送 deleteEvent 釋放會議室（背景送，失敗不擋錄音和上傳）；預約至少選 1 人；
            時間軸每 30 分鐘 44px、點時間軸只選得到整點半點、從選單選時間軸捲過去、自動切到明天會說；
            按鈕改「現在開會並錄音」「預約（不錄音）」，今天空著時開始時間可以選「現在」
+     v6.4（10/28）：會議室分頁 20 個使用問題（Jacky 10/28 試用回饋＋個人 Claude 逐項檢查；這版前端由個人 Claude 改）：
+           沒有下一場寫「今日已無會議」；按重新讀取、預約、取消後 rooms／todayEvents 帶 fresh（後端 v0.21 不用快取，剛刪的、剛訂的馬上看得到）；
+           每 30 秒用現在的時間重畫地圖；預約今天的時間從現在開始（不列已經過去的）；臨時會議、預約的主按鈕固定在選單底部；
+           從會議室開臨時會議不自動跳鍵盤；下一場不到 10 分鐘不能現在開會；延長 15 分鐘時日曆和會議室也延長（extendEvent）；
+           錄音分頁的臨時會議說明不會預約會議室；導覽列「我的預約 N」；日曆上已經沒有的我的預約自動移掉；同一段時間重複預約先確認；
+           房間選單「開始錄這場」（我的預約進行中或 10 分鐘內開始）；預約的那場錄完提早結束也釋放會議室
+           地圖不能拖、不能縮放（10/28 Jacky：會拖到整張圖跑出畫面，不給拉才對）：總覽固定，點房間自動放大、關掉選單縮回；
+           先開過預約畫面，臨時會議的「開始」不會再停用；整頁不能放大縮小（兩指縮放、點兩下放大都擋掉）
      放在公開的 GitHub Pages：不能寫死任何網址、key、email、會議內容
      最後更新: 2026/10/28 -->
 <html lang="zh-Hant-TW">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- v6.4（10/28 Jacky）：整頁不能放大縮小（像 App）；maximum-scale=1 也讓 iPhone 點輸入框時不會自動放大 -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Meet書 錄音</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -72,7 +81,7 @@
   }
 }
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; touch-action: manipulation; } /* v6.4：不能點兩下放大 */
 body {
   margin: 0; background: var(--bg); color: var(--fg);
   font-family: -apple-system, "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
@@ -268,12 +277,14 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 .action button.red { color: var(--red); }
 .action button.bold { font-weight: 600; }
 
-.toast { position: fixed; left: 16px; right: 16px; top: calc(10px + env(safe-area-inset-top)); max-width: 420px; margin: 0 auto; z-index: 30;
+/* v6.4：放在導覽列下面（原本蓋住右上角的按鈕，預約後 10 秒的「復原」提示期間按不到）；點擊穿透，只有「復原」按得到 */
+.toast { position: fixed; left: 16px; right: 16px; top: calc(68px + env(safe-area-inset-top)); max-width: 420px; margin: 0 auto; z-index: 30; pointer-events: none;
   background: var(--card); color: var(--fg); border-radius: 14px; padding: 12px 16px; text-align: center; font-size: 15px; font-weight: 600;
   box-shadow: 0 6px 24px rgb(0 0 0 / .18); display: flex; align-items: center; justify-content: center; gap: 8px; }
 .toast::before { content: ""; width: 8px; height: 8px; border-radius: 4px; background: var(--green); flex: 0 0 auto; }
 .toast.warn::before { background: var(--orange); }
 .toast .two { display: grid; gap: 2px; }
+.toast .toast-act { pointer-events: auto; }
 .toast .two small { font-size: 13px; font-weight: 500; color: var(--muted); }
 .toast.has-act { justify-content: flex-start; text-align: left; padding: 10px 10px 10px 16px; }
 .toast .toast-act { margin-left: auto; flex: 0 0 auto; min-height: 36px; padding: 6px 14px; border: 0; border-radius: 999px; background: var(--fill); color: var(--blue);
@@ -399,6 +410,18 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   .sheet.room > .panel { width: 340px; max-height: none; height: 100%; border-radius: 14px 0 0 14px; align-content: start;
     padding: calc(8px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) 16px; }
 }
+/* v6.4 選單底部固定的主按鈕（臨時會議、預約）：選單內容再長，按鈕和它的提示都在畫面上 */
+#quickSheet > .panel { padding-bottom: 0; }
+.sheet-foot { position: sticky; bottom: 0; z-index: 2; display: grid; gap: 8px; margin: 0 -16px; padding: 8px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--bg); box-shadow: 0 -1px 0 var(--sep); }
+.sheet-foot > .msg:empty { display: none; }
+#quickSheet.bkmode .members { max-height: 26vh; }
+.mine-btn { font-size: 15px; white-space: nowrap; }
+.mine-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 16px; font-size: 15px; }
+.mine-row .go { flex: 1 1 auto; min-width: 0; text-align: left; font: inherit; color: var(--fg); background: none; border: 0; padding: 6px 0; cursor: pointer; }
+.mine-row .go small { display: block; color: var(--muted); font-size: 13px; }
+.mine-row .text-btn { flex: 0 0 auto; color: var(--red); }
+.mine-row .text-btn:disabled { color: var(--muted); }
 #roomsScr .nav .ttl { margin-right: 8px; color: var(--fg); font-size: 17px; font-weight: 700; }
 </style>
 </head>
@@ -492,6 +515,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   <div class="rwrap">
     <div class="nav">
       <span class="left"><b class="ttl">會議室</b><span class="sample" id="fakeBanner5" hidden>範例版本：不會真的預約、錄音不會上傳</span></span>
+      <button class="text-btn mine-btn" type="button" id="btnMine" hidden>我的預約</button>
       <button class="icon-btn" type="button" id="btnRoomsRefresh" aria-label="重新讀取會議室"><svg class="ico"><use href="#i-refresh"/></svg></button>
       <button class="icon-btn" type="button" id="btnGear3" aria-label="設定"><svg class="ico"><use href="#i-gear"/></svg></button>
     </div>
@@ -650,10 +674,13 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     <div class="chips" id="qUnits" hidden></div>
     <p class="msg" id="qMsg"></p>
     <div class="list members" id="qList"></div>
-    <p class="msg ng" id="qErr"></p>
-    <p class="foot-note warn" id="bkNeed" style="margin:0 4px;text-align:center" hidden>至少選 1 人（記得勾自己）</p>
-    <button class="btn primary" id="qStart">開始（已選 0 人）</button>
-    <button class="text-btn" id="qNoPick">不選人直接開始</button>
+    <!-- v6.4 主按鈕和它上面的提示固定在選單底部（10/28：預約時按鈕被擠到螢幕外、沒勾人的原因也看不到） -->
+    <div class="sheet-foot">
+      <p class="msg ng" id="qErr"></p>
+      <p class="foot-note warn" id="bkNeed" style="margin:0 4px;text-align:center" hidden>至少選 1 人（記得勾自己）</p>
+      <button class="btn primary" id="qStart">開始（已選 0 人）</button>
+      <button class="text-btn" id="qNoPick">不選人直接開始</button>
+    </div>
   </div>
 </div>
 
@@ -745,10 +772,21 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     </div>
     <p class="msg ng" id="rsMsg"></p>
     <div id="rsGoBox" style="display:grid;gap:6px">
+      <button class="btn primary" type="button" id="rsRec" hidden>開始錄這場</button>
       <button class="btn accent" type="button" id="rsBook">預約（不錄音）</button>
       <button class="btn plain accent-t" type="button" id="rsGo">現在開會並錄音</button>
       <p class="foot-note warn" id="rsHint" style="margin:0 4px;text-align:center" hidden></p>
     </div>
+  </div>
+</div>
+
+<!-- 我的預約（v6.4）：這支手機訂的、還沒結束的全部列出來；點一列跳到那間，「取消」同房間選單 -->
+<div class="sheet" id="mineSheet" hidden>
+  <div class="panel" role="dialog" aria-labelledby="mineHead">
+    <div class="panel-head"><h2 id="mineHead">我的預約</h2>
+      <button class="icon-btn" type="button" id="mineClose" aria-label="關閉"><svg class="ico"><use href="#i-x"/></svg></button></div>
+    <div class="list" id="mineList"></div>
+    <p class="foot-note" style="margin:0 4px">只列這支手機預約的；在別的手機或日曆上訂的，請在那裡取消或找 Jacky</p>
   </div>
 </div>
 
@@ -759,6 +797,16 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
       <div class="t"><b style="color:var(--fg);font-size:15px">取消這個預約？</b><span id="bcText" style="display:block;margin-top:4px"></span></div>
       <button class="red bold" id="btnBcGo">取消預約</button></div>
     <div class="group"><button class="bold" id="btnBcBack">不要</button></div>
+  </div>
+</div>
+
+<!-- 重複預約（v6.4）：這支手機同一段時間已經訂了一間，先確認（按錯房間再訂一次） -->
+<div class="sheet action" id="dupConfirm" hidden>
+  <div class="panel action">
+    <div class="group">
+      <div class="t"><b style="color:var(--fg);font-size:15px">這段時間你已經預約了</b><span id="dupText" style="display:block;margin-top:4px"></span></div>
+      <button class="bold" id="btnDupGo">還是要預約</button></div>
+    <div class="group"><button class="bold" id="btnDupBack">不要</button></div>
   </div>
 </div>
 
@@ -775,7 +823,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
 <script>
 (function () {
   "use strict";
-  const VERSION = "record v6.3（10/28）";
+  const VERSION = "record v6.4（10/28）";
   const $ = (id) => document.getElementById(id);
   const pad = (n) => String(n).padStart(2, "0");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -930,6 +978,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   //     delold 舊後端「不認得的 action」｜notmine 一律 notMine｜ended 一律「這場已經結束了」｜needmembers 預約（帶 start）一律回 needMembers
   //     每次開頁有一筆「這支手機訂的」範例預約：明天 15:00–16:00 會議室 D（看「我在這間的預約」）
   //   todayfull（v6.3）：會議室 E 今天整天有人（看預約自動切到明天的提示）
+  //   extendEvent（v6.4）：照後端 v0.21 延長 fakeBooked 那場（後面有預約就到那時、緊接著回 roomBusy）；rooms、todayEvents 的 fresh 不用處理
   const FAKE_KIND = { todayEvents: "events", members: "members", createEvent: "event", complete: "complete", cancel: "cancel", rooms: "rooms" };
   function fakeMode(action) {
     const m = { base: "1" };
@@ -1104,6 +1153,20 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
           else if (be - now < 5 * MIN) { r.unchanged = true; r.end = b.ev.end; }
           else { b.ev.end = new Date(Math.ceil(now / MIN) * MIN).toISOString(); r.ended = true; r.end = b.ev.end; }
           return reply(200, r);
+        }
+        // v6.4 延長（同後端 v0.21）：後面有預約就延長到那時、緊接著就回 roomBusy；fresh 不用處理（假後端沒有快取）
+        if (body.action === "extendEvent") {
+          const i = fakeBooked.findIndex((b) => b.req && "fake-event-" + String(b.req).slice(-6) === body.eventId);
+          if (i < 0) return reply(200, { ok: false, error: "日曆上已經沒有這場" });
+          const b = fakeBooked[i], be = Date.parse(b.ev.end), want = be + (body.minutes || 15) * MIN;
+          if (b.req !== body.requestId) return reply(200, { ok: false, error: "只能動這支手機建立的會議", notMine: true });
+          if (be <= Date.now()) return reply(200, { ok: false, error: "這場已經結束了", ended: true });
+          const room = b.key && fakeRooms(ymd(new Date(be))).find((x) => x.key === b.key);
+          const next = room ? room.events.filter((e) => e.start !== b.ev.start && Date.parse(e.start) >= be).map((e) => Date.parse(e.start)).sort((x, y) => x - y)[0] : 0;
+          if (next && next - be < MIN) return reply(200, { ok: false, error: "會議室後面有人預約，不能延長", roomBusy: true, until: new Date(next).toISOString() });
+          const end = next && next < want ? next : want;
+          b.ev.end = new Date(end).toISOString();
+          return reply(200, { ok: true, end: b.ev.end, cut: end < want });
         }
         if (body.action === "createEvent" && body.room && (fakeHas("roombusy") || (body.start && fakeOverlap(body.room, bookDay, t0, t1)))) {
           if (!body.start && !fakeBooked.some((b) => b.key === body.room && Date.parse(b.ev.end) > Date.now()))
@@ -1659,14 +1722,18 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
 
   // 讀取中再呼叫：回傳同一個讀取（不重複送）；結果 "ok"｜"fail"｜"nocfg"
   let evPromise = null, evLoadedAt = 0;
-  function loadEvents(why) {
-    if (!evPromise) evPromise = fetchEvents(why).finally(() => { evPromise = null; evLoadedAt = Date.now(); });
+  // fresh（v6.4）：按重新讀取、自己剛預約或取消之後，後端不用快取
+  function loadEvents(why, fresh) {
+    if (evPromise && fresh) return evPromise.then(() => loadEvents(why, true));
+    if (!evPromise) evPromise = fetchEvents(why, fresh).finally(() => { evPromise = null; evLoadedAt = Date.now(); });
     return evPromise;
   }
-  async function fetchEvents(why) {
+  async function fetchEvents(why, fresh) {
     if (!cfg.fake() && !cfg.url()) { evState = "nocfg"; renderEvents(); return "nocfg"; }
     if (!events) { evState = "loading"; renderEvents(); }
-    const v = await request({ action: "todayEvents" }, EVENT_RETRY_WAIT, null, "讀取行事曆");
+    const body = { action: "todayEvents" };
+    if (fresh) body.fresh = true;
+    const v = await request(body, EVENT_RETRY_WAIT, null, "讀取行事曆");
     if (v.ok) {
       events = v.r.events.map((e) => ({ id: String(e.id), title: String(e.title || "（沒有標題）"), start: Date.parse(e.start), end: Date.parse(e.end), guests: typeof e.guests === "number" ? e.guests : null }))
         .filter((e) => e.id && isFinite(e.start) && isFinite(e.end));
@@ -1687,7 +1754,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     if (refreshing) return;
     refreshing = true; spinRefresh(true);
     const t0 = Date.now();
-    const r = await loadEvents("重新讀取");
+    const r = await loadEvents("重新讀取", true);
     await sleep(Math.max(0, 600 - (Date.now() - t0)));
     refreshing = false; spinRefresh(false);
     if (r === "ok") toast("已更新");
@@ -1870,6 +1937,8 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     const n = pickedIds().length;
     $("qCount").textContent = "已選 " + n + " 人";
     if (bk) { bkButton(); return; } // v6.1 預約模式：主按鈕寫預約的時段
+    // v6.4：預約模式會停用主按鈕（讀取中、沒勾人、預約中），回到臨時會議要恢復，不然按不下去（10/28 Jacky：先開預約、再開臨時會議就按不了）
+    $("qStart").disabled = false;
     $("qStart").textContent = "開始（已選 " + n + " 人）";
   }
   function renderQuick() {
@@ -1918,13 +1987,16 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   function openQuick(room) {
     bkMode(null); // v6.1：同一個選單也當預約用，回到臨時會議的樣子
     quickRoom = room && room.key ? room : null;
-    $("qRoomNote").hidden = !quickRoom;
-    $("qRoomNote").textContent = quickRoom ? "在" + quickRoom.name + "開，" + (quickRoom.until ? "可以用到 " + HM(localTime(quickRoom.until)) : "預約 1 小時") : "";
+    // v6.4：從錄音分頁開的不會預約會議室，要說清楚（以為有占到會議室，別人會闖進來）
+    $("qRoomNote").hidden = false;
+    $("qRoomNote").textContent = quickRoom ? "在" + quickRoom.name + "開，" + (quickRoom.until ? "可以用到 " + HM(localTime(quickRoom.until)) : "預約 1 小時") :
+      "不會預約會議室；要用會議室請到「會議室」分頁點那間";
     $("qName").value = ""; $("qSearch").value = ""; $("qErr").textContent = ""; qDept = "";
     $("quickSheet").hidden = false;
+    $("quickSheet").querySelector(".panel").scrollTop = 0;
     renderQuick();
     loadMembers("選人");
-    $("qName").focus();
+    if (!quickRoom) $("qName").focus(); // 從會議室開的不自動跳鍵盤（v6.4：鍵盤會蓋住選單下半部和按鈕）
   }
   // 按「開始」先跳確認選單（v5.1，見 askQuick）
   $("btnQuick").addEventListener("click", () => openQuick());
@@ -2256,7 +2328,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
           m.eventWarn = (unknown ? "有 " + unknown + " 人不在成員名單，沒有加進日曆" : "") + (room && !booked ? (unknown ? "；" : "") + "會議室沒有預約到（後端還不支援）" : "");
           if (m.status !== "done") await saveComplete(m);
         }
-        if (room) loadRooms("預約" + room.name);
+        if (room) loadRooms("預約" + room.name, true);
       } else if (v.roomBusy) {
         // 還沒開始錄音就知道的：startMeeting 不錄、回會議室；等太久才回來的（已經在錄）：照樣錄，只是沒預約到
         log("會議室已被預約：" + (room ? room.name : "") + (m ? "（已經在錄音，照樣錄）" : ""));
@@ -2299,7 +2371,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     const now = new Date();
     const ev = t.ev || null;
     const m = { name: t.name, prefix: prefixOf(now, uniqueName(now, cleanName(t.name) || "會議")), start: now.toISOString(),
-      t0: Date.now(), createdAt: Date.now(), eventId: ev ? ev.id : "", eventP: quickRes ? quickRes.done : null, ownReq: quickRes ? quickRes.requestId : "",
+      t0: Date.now(), createdAt: Date.now(), eventId: ev ? ev.id : "", eventP: quickRes ? quickRes.done : null, ownReq: quickRes ? quickRes.requestId : ownReqOf(ev),
       evStart: ev ? ev.start : 0, evEnd: ev ? ev.end : 0, quick: !!quickRes,
       // 時間到提醒的基準：日曆結束時間；臨時會議、沒有日曆、補錄已結束的會議 → 從現在起 60 分鐘；在會議室開、下一場更早開始 → 到那時（v6.0）
       endAt: ev && ev.end > Date.now() ? ev.end : Math.min(Date.now() + QUICK_MS, t.quick && t.quick.room && t.quick.room.until ? Date.now() + t.quick.room.until - roomNow() : Infinity),
@@ -2387,17 +2459,26 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     updateStartBtn(); renderEvents(); renderUploads();
   }
 
+  // v6.4 從日曆選的會議是這支手機預約的（mv_bookings 有這個 eventId）：一樣是「我的」，提早結束、延長都可以動日曆
+  function ownReqOf(ev) {
+    const b = ev && myBookings().find((x) => x.eventId === ev.id);
+    return b ? b.requestId : "";
+  }
   // v6.3 臨時會議（這支手機 createEvent 建的）提早結束、取消錄音：釋放會議室（endEvent 縮短或刪掉、deleteEvent 刪掉）
-  // 背景送、不 await：失敗只寫紀錄＋提示，不擋錄音、上傳、完成檔；從日曆選的會議（沒有 ownReq）不送
+  // v6.4 預約的那場（ownReqOf）提早結束也送 endEvent；取消錄音不刪預約（只是不錄，會議照開）
+  // 背景送、不 await：失敗只寫紀錄＋提示，不擋錄音、上傳、完成檔；別人的會議（沒有 ownReq）不送
   function releaseRoom(m, action) {
-    if (!m.quick || !m.ownReq) return;
+    if (!m.ownReq || (action === "deleteEvent" && !m.quick)) return;
+    // 預約的那場還沒到開始時間就按結束（提早試錄）：後端會把「還沒開始」的整場刪掉，所以不送
+    if (!m.quick && Date.now() < m.evStart + MIN) { log("提早結束：還沒到預約的開始時間，日曆活動不動"); return; }
     const what = action === "endEvent" ? "提早結束" : "取消錄音";
     Promise.resolve(m.eventP).then(async () => {
       if (!m.eventId) { log(what + "：這場沒有日曆活動，不用釋放會議室"); return; }
       const v = await request({ action: action, eventId: m.eventId, requestId: m.ownReq }, EVENT_RETRY_WAIT, null, what + "，釋放會議室");
       if (v.ok) {
         log(what + "：" + (v.r.deleted ? "日曆活動已刪除" : v.r.ended ? "日曆活動提早結束（" + hm(Date.parse(v.r.end)) + "）" : v.r.unchanged ? "快到預定結束了，日曆活動不動" : "日曆上已經沒有這場"));
-        loadRooms(what);
+        if (!m.quick) myBookDel(m.eventId); // 預約的那場開完了：從我的預約拿掉
+        loadRooms(what, true);
         return;
       }
       if (v.ended) { log(what + "：日曆活動已經結束，不用釋放"); return; }
@@ -2497,7 +2578,27 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     meeting.endAt = Math.max(meeting.endAt, Date.now()) + EXTEND_MS; meeting.remind = 0; meeting.remindAt = 0;
     log("延長 15 分鐘：預定 " + HM(meeting.endAt) + " 結束");
     tick();
+    extendEvent(meeting);
   });
+  // v6.4 延長時日曆和會議室也延長（不然別人看到會議室空了會闖進來）：只動這支手機建的（臨時會議、預約的那場）
+  // 後面有人預約：後端只延長到那時；背景送，失敗只提示，不擋錄音
+  function extendEvent(m) {
+    if (!m.ownReq) return;
+    Promise.resolve(m.eventP).then(async () => {
+      if (!m.eventId) return;
+      const v = await request({ action: "extendEvent", eventId: m.eventId, requestId: m.ownReq, minutes: EXTEND_MS / MIN }, EVENT_RETRY_WAIT, null, "延長日曆活動");
+      if (v.ok) {
+        const end = Date.parse(v.r.end);
+        log("日曆活動延長到 " + hm(end) + (v.r.cut ? "（後面有人預約，只能到那時）" : ""));
+        toast(v.r.cut ? "會議室 " + hm(end) + " 後有人預約，只延長到那時" : "會議室也延長到 " + hm(end));
+        loadRooms("延長", true);
+        return;
+      }
+      if (v.roomBusy) { log("沒有延長日曆活動：" + v.reject); toast("會議室後面有人預約，沒辦法延長；錄音照常", true); return; }
+      log("沒有延長日曆活動：" + (v.reject || v.fail));
+      if (!(v.reject && OLD_BACKEND.test(v.reject))) toast("會議室沒有延長（" + (v.reject || v.fail) + "）", true);
+    }).catch((e) => log("延長日曆活動失敗（" + e.message + "）"));
+  }
 
   // 結束會議：先跳出底部確認選單（結束並上傳／繼續錄音），避免誤觸（下方按鈕和時間到狀態列共用）
   function disarmEnd() { $("endSheet").hidden = true; }
@@ -2647,12 +2748,14 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   // ---------- 會議室（v6.0）：辦公室的 2.5D 分身 ----------
   // 配置（外框、部門區塊、會議室、座位）和每間今天的預約都來自後端 rooms；「現在」以回應的 now 為準
   const ROOMS_MS = (num("roomsevery") || 60) * 1000; // 停在會議室分頁時多久讀一次（?roomsevery=秒數：測試用）
-  const ROOM_WAIT_MS = 15000;  // 在會議室開臨時會議：最多等預約結果多久，再久就照樣開始錄音
+  const ROOM_WAIT_MS = 15000;
+  const QUICK_MIN_MS = 10 * MIN; // v6.4 下一場不到 10 分鐘就開始：不能在這間現在開會  // 在會議室開臨時會議：最多等預約結果多久，再久就照樣開始錄音
   const MERGE_AT = 3;          // 同一個部門坐了 3 人以上：合併成一個標籤「部門 ×N」（太擠）
   const TAG_ZOOM = 0.8;        // 放大到這個倍數以上才顯示小人頭上的部門標籤（整張圖時每間只有一個標籤）
   // 視角：繞垂直軸轉 rot 度、往下看的壓縮 tilt；直拿時轉 90 度讓長邊變直的（換方向看，字還是正的）
   // （嚴格的等角 45 度不管怎麼轉都是扁的菱形，直拿填不滿：只轉 12 度，看得到側牆又能讓長邊變直的）
-  const VIEWS = { land: { rot: 12, tilt: 0.72 }, port: { rot: 102, tilt: 0.72 } };
+  // v6.4 直拿 102 度 → 92 度、往下看多一點（0.72 → 0.85）：斜的地板在窄螢幕上左右撐太寬，房間只佔地圖框高度的一半（上下各空 1/4）；現在約 2/3
+  const VIEWS = { land: { rot: 12, tilt: 0.72 }, port: { rot: 92, tilt: 0.85 } };
   const SLAB = 14, RAISE = 8, WALL = 20, FIG_H = 46; // 地板厚度、會議室墊高、牆高、小人高（平面圖單位）
   const DEPT_COLORS = ["#f2b8a0", "#a9c8f0", "#b5ddb0", "#d9b8e8", "#f3d58c", "#9fd8d6", "#f0b3c8", "#c9c2b4"];
   const deptColor = new Map(); // 部門 → 顏色：第一次出現時依序給，這次開頁內不變
@@ -2661,18 +2764,23 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   const roomNow = () => Date.now() + roomOffset;   // 後端的「現在」
   const localTime = (t) => t - roomOffset;        // 後端時間 → 這支手機的時間（顯示用）
 
-  function loadRooms(why) {
-    if (!roomsP) roomsP = fetchRooms(why).finally(() => { roomsP = null; });
+  // fresh（v6.4）：按右上角重新讀取、預約或取消之後：後端不用快取（剛在日曆上刪掉、剛預約的馬上看得到）；讀取中再要 fresh 就等這次完再讀一次
+  function loadRooms(why, fresh) {
+    if (roomsP && fresh) return roomsP.then(() => loadRooms(why, true));
+    if (!roomsP) roomsP = fetchRooms(why, fresh).finally(() => { roomsP = null; });
     return roomsP;
   }
-  async function fetchRooms(why) {
+  async function fetchRooms(why, fresh) {
     if (!cfg.fake() && !cfg.url()) { roomsState = "nocfg"; renderRooms(); return "nocfg"; }
     if (!roomsData) { roomsState = "loading"; renderRooms(); }
-    const v = await request({ action: "rooms" }, EVENT_RETRY_WAIT, null, "讀取會議室");
+    const body = { action: "rooms" };
+    if (fresh) body.fresh = true;
+    const v = await request(body, EVENT_RETRY_WAIT, null, "讀取會議室");
     if (v.ok) {
       try {
         roomsData = normRooms(v.r); roomsState = "ok"; roomsErr = "";
-        log("會議室 " + roomsData.rooms.length + " 間（" + why + "）");
+        log("會議室 " + roomsData.rooms.length + " 間（" + why + (fresh ? "，不用快取" : "") + "）");
+        pruneMine();
       } catch (e) { v.ok = false; roomsErr = "配置讀不懂：" + e.message; }
     } else roomsErr = v.reject || v.fail;
     if (!v.ok) { roomsState = roomsData ? "stale" : "fail"; log("讀不到會議室（" + why + "）：" + roomsErr); }
@@ -2718,8 +2826,8 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     const end = st.ev ? "到 " + hm(st.ev.end) : "";
     if (st.kind === "busy") return { title: st.ev.title || "（沒有標題）", sub: r.name + "・" + end };
     if (st.kind === "private") return { title: "私人預約", sub: r.name + "・" + end };
-    if (st.kind === "free") return { title: r.name, sub: st.next ? "空閒・下一場 " + hm(st.next.start) : "今天都空著",
- };
+    // v6.4（10/28 Jacky）：沒有下一場寫「今日已無會議」（稍早可能開過會，不是整天都空著）
+    if (st.kind === "free") return { title: r.name, sub: st.next ? "空閒・下一場 " + hm(st.next.start) : "今日已無會議" };
     return { title: r.name, sub: "讀不到" };
   }
 
@@ -2732,6 +2840,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     if (roomsData) $("roomsStale").textContent = "顯示的是 " + hm(roomsData.at) + " 的狀態";
     if (screen === "rooms") renderMap();
     if (roomSel) renderRoomSheet();
+    renderMineBtn();
   }
   // ----- 地圖：SVG 畫幾何（跟著縮放），標籤用 HTML 疊在上面（字永遠一樣大、是正的）-----
   const NS = "http://www.w3.org/2000/svg";
@@ -2979,14 +3088,6 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     e.textContent = l.forms[0].text; l.form = 0;
     return l.forms;
   }
-  // 不讓地圖整個拖出框外；縮放在整張圖的 0.9～6 倍之間
-  function clampView(v) {
-    const f = map.fit, S = Math.min(Math.max(v.S, f.S * 0.9), Math.max(f.S * 6, 2.5));
-    const b = map.bb, m = 60;
-    const TX = Math.min(Math.max(v.TX, m - b.x1 * S), map.W - m - b.x0 * S);
-    const TY = Math.min(Math.max(v.TY, m - b.y1 * S), map.H - m - b.y0 * S);
-    return { S: S, TX: TX, TY: TY };
-  }
   let anim = 0;
   const reduceMotion = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   function animateTo(target) {
@@ -3016,36 +3117,17 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     animateTo({ S: S, TX: vw / 2 - (bx.x0 + bx.x1) / 2 * S, TY: vt + 30 + (vh - 30) / 2 - (bx.y0 + bx.y1) / 2 * S });
   }
 
-  // 手勢：一指拖曳、兩指縮放（只動地圖；touch-action:none 讓整頁不捲動、不縮放）；沒移動的短按＝點房間
+  // 手勢（v6.4，10/28 Jacky「不需要可以拉，不給拉才是對的」）：地圖不能拖、不能縮放，總覽固定；點房間自動放大到那間，關掉選單縮回總覽
+  // 只剩點房間：沒移動的短按＝點；touch-action:none 讓整頁不捲動、不縮放
   const ptrs = new Map();
-  let gest = null, tap = null;
-  function startGesture() {
-    if (!map) return;
-    const p = Array.from(ptrs.values());
-    gest = { S: map.S, TX: map.TX, TY: map.TY, p: p.slice(0, 2).map((q) => q.slice()) };
-  }
-  function boxPt(e) { const r = $("mapBox").getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+  let tap = null;
   $("mapBox").addEventListener("pointerdown", (e) => {
-    cancelAnimationFrame(anim);
     try { $("mapBox").setPointerCapture(e.pointerId); } catch (err) {}
-    ptrs.set(e.pointerId, boxPt(e));
+    ptrs.set(e.pointerId, true);
     tap = ptrs.size === 1 ? { x: e.clientX, y: e.clientY, t: Date.now() } : null;
-    startGesture();
   });
   $("mapBox").addEventListener("pointermove", (e) => {
-    if (!ptrs.has(e.pointerId) || !gest || !map) return;
-    ptrs.set(e.pointerId, boxPt(e));
-    if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 8) tap = null;
-    const p = Array.from(ptrs.values());
-    if (p.length >= 2 && gest.p.length >= 2) {
-      const d0 = Math.hypot(gest.p[0][0] - gest.p[1][0], gest.p[0][1] - gest.p[1][1]) || 1;
-      const d = Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]);
-      const m0 = [(gest.p[0][0] + gest.p[1][0]) / 2, (gest.p[0][1] + gest.p[1][1]) / 2], m = [(p[0][0] + p[1][0]) / 2, (p[0][1] + p[1][1]) / 2];
-      const S = clampView({ S: gest.S * d / d0, TX: 0, TY: 0 }).S;
-      setView(clampView({ S: S, TX: m[0] - (m0[0] - gest.TX) / gest.S * S, TY: m[1] - (m0[1] - gest.TY) / gest.S * S }));
-    } else if (p.length === 1) {
-      setView(clampView({ S: gest.S, TX: gest.TX + p[0][0] - gest.p[0][0], TY: gest.TY + p[0][1] - gest.p[0][1] }));
-    }
+    if (tap && ptrs.has(e.pointerId) && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 8) tap = null;
   });
   function endPtr(e) {
     if (!ptrs.has(e.pointerId)) return;
@@ -3056,17 +3138,13 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
       if (r) openRoom(r.dataset.room);
     }
     tap = null;
-    startGesture();
   }
   $("mapBox").addEventListener("pointerup", endPtr);
   $("mapBox").addEventListener("pointercancel", endPtr);
-  $("mapBox").addEventListener("wheel", (e) => {
-    if (!map) return;
-    e.preventDefault();
-    const q = boxPt(e), S = clampView({ S: map.S * Math.exp(-e.deltaY * 0.0015), TX: 0, TY: 0 }).S;
-    setView(clampView({ S: S, TX: q[0] - (q[0] - map.TX) / map.S * S, TY: q[1] - (q[1] - map.TY) / map.S * S }));
-  }, { passive: false });
-  $("mapBox").addEventListener("gesturestart", (e) => e.preventDefault()); // iOS Safari：不要縮放整頁
+  $("mapBox").addEventListener("wheel", (e) => e.preventDefault(), { passive: false }); // 電腦上滾輪也不縮放、不捲頁面
+  // v6.4 整頁都不能兩指縮放（10/28 Jacky：錄音分頁被放大到看不到按鈕）：iOS 不理 user-scalable=no，要擋 gesture 事件和兩指的 touchmove
+  ["gesturestart", "gesturechange", "gestureend"].forEach((t) => document.addEventListener(t, (e) => e.preventDefault(), { passive: false }));
+  document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
   // 轉手機、改視窗大小：重畫（直拿／橫拿換視角）；底部選單開著就重新放大到那間
   let mapSize = "";
   function onMapResize() {
@@ -3106,7 +3184,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     $("rsName").textContent = r.name + (r.capacity ? "・" + r.capacity + " 人" : "");
     $("rsState").className = "rs-state " + st.kind;
     $("rsState").textContent = st.kind === "busy" ? "開會中・到 " + hm(st.ev.end) : st.kind === "private" ? "私人預約・到 " + hm(st.ev.end) :
-      st.kind === "free" ? (st.next ? "空閒・下一場 " + hm(st.next.start) : "今天都空著") : "讀不到：日曆上找不到這間";
+      st.kind === "free" ? (st.next ? "空閒・下一場 " + hm(st.next.start) : "今日已無會議") : "讀不到：日曆上找不到這間";
     $("rsNow").hidden = st.kind !== "busy";
     if (st.kind === "busy") {
       const e = st.ev;
@@ -3124,7 +3202,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
       row.append(el("span", "mono", hm(e.start) + "–" + hm(e.end)), ti);
       box.append(row);
     });
-    if (!left.length) box.append(el("div", "rs-ev", "今天沒有其他預約"));
+    if (!left.length) box.append(el("div", "rs-ev", "今日已無其他會議"));
     // v6.3 我在這間的預約：這支手機訂的、還沒結束的（所有日期），每列一顆「取消」
     const mbox = $("rsMine"); mbox.textContent = "";
     $("rsMineBox").hidden = !mine.length;
@@ -3140,14 +3218,19 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     $("rsGoBox").hidden = !r.found;
     $("rsGo").hidden = !can;
     const soon = can && st.next && st.next.start - now <= QUICK_MS;
+    // v6.4 下一場不到 10 分鐘就開始：不能現在開會（只占得到幾分鐘，馬上要讓出來）
+    const tight = soon && st.next.start - now < QUICK_MIN_MS;
+    $("rsGo").disabled = !!tight;
     $("rsHint").hidden = !soon;
-    $("rsHint").textContent = soon ? hm(st.next.start) + " 有人預約，只能用到那時" : "";
+    $("rsHint").textContent = !soon ? "" : tight ? hm(st.next.start) + " 有人預約，只剩 " + Math.max(0, Math.floor((st.next.start - now) / MIN)) + " 分鐘，不能現在開會" :
+      hm(st.next.start) + " 有人預約，只能用到那時";
+    renderRecMine(r, now);
   }
   $("rsGo").addEventListener("click", () => {
     const r = roomsData && roomsData.rooms.find((x) => x.key === roomSel);
     if (!r) return;
     const now = roomNow(), st = roomState(r, now);
-    if (st.kind !== "free") { renderRoomSheet(); return; }
+    if (st.kind !== "free" || (st.next && st.next.start - now < QUICK_MIN_MS)) { renderRoomSheet(); return; }
     const room = { key: r.key, name: r.name, until: st.next && st.next.start - now <= QUICK_MS ? st.next.start : 0 };
     log("在" + r.name + "開臨時會議" + (room.until ? "（只能用到 " + hm(room.until) + "）" : ""));
     closeRoom(false);
@@ -3177,8 +3260,22 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     if (list.length !== a.length) lsSet(BOOK_KEY, JSON.stringify(list));
     return list.sort((x, y) => x.start - y.start);
   }
-  function myBookPut(b) { lsSet(BOOK_KEY, JSON.stringify(myBookings().filter((x) => x.eventId !== b.eventId).concat([b]))); }
-  function myBookDel(eventId) { lsSet(BOOK_KEY, JSON.stringify(myBookings().filter((x) => x.eventId !== eventId))); }
+  // at（v6.4）：記下來的時間；剛訂的 2 分鐘內不會被 pruneMine 移掉（舊後端的會議室日曆還沒有這場）
+  function myBookPut(b) { lsSet(BOOK_KEY, JSON.stringify(myBookings().filter((x) => x.eventId !== b.eventId).concat([Object.assign({ at: Date.now() }, b)]))); renderMineBtn(); }
+  function myBookDel(eventId) { lsSet(BOOK_KEY, JSON.stringify(myBookings().filter((x) => x.eventId !== eventId))); renderMineBtn(); }
+  // v6.4 已經在日曆上刪掉的（別人幫忙刪、自己在 Google 日曆刪）：今天的預約在會議室資料裡對不到開始時間，就從我的預約移掉
+  // 後端 v0.21 起剛訂、會議室還沒接受的也在資料裡；舊後端保險：記下來不到 2 分鐘的不動
+  function pruneMine() {
+    if (!roomsData) return;
+    const day = tpeDay(roomsData.at), now = Date.now();
+    myBookings().forEach((b) => {
+      if (tpeDay(b.start) !== day || !(b.at && now - b.at > 2 * MIN)) return;
+      const r = roomsData.rooms.find((x) => x.key === b.room);
+      if (!r || !r.found || r.events.some((e) => e.start === b.start)) return;
+      myBookDel(b.eventId);
+      log("我的預約 " + b.roomName + " " + bookText(b) + "：日曆上已經沒有，移掉");
+    });
+  }
   // 「10/29（週四）13:00–14:00 設計審查」
   const bookText = (b) => bkMD(tpeDay(b.start)) + "（" + bkWd(tpeDay(b.start)) + "）" + tpeHM(b.start) + "–" + tpeHM(b.end) + (b.title ? " " + b.title : "");
   const bcBusy = new Set(); // 取消中的 eventId（按鈕停用，不會按兩次）
@@ -3206,11 +3303,57 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     }
     if (roomSel) renderRoomSheet();
     if (ok || v.notMine || v.ended) {
-      loadRooms("取消預約" + b.roomName);
-      if (tpeDay(b.start) === bkToday()) loadEvents("取消了今天的預約");
+      loadRooms("取消預約" + b.roomName, true);
+      if (tpeDay(b.start) === bkToday()) loadEvents("取消了今天的預約", true);
     }
     return ok;
   }
+  // ----- 我的預約（v6.4）：導覽列「我的預約 N」→ 全部列出來（不用一間一間點）-----
+  function renderMineBtn() {
+    const n = myBookings().length;
+    $("btnMine").hidden = !n;
+    $("btnMine").textContent = "我的預約 " + n;
+    if (!$("mineSheet").hidden) renderMineList();
+  }
+  function renderMineList() {
+    const box = $("mineList"), list = myBookings();
+    box.textContent = "";
+    if (!list.length) { box.append(el("div", "rs-ev", "沒有預約")); return; }
+    list.forEach((b) => {
+      const row = el("div", "mine-row"), go = el("button", "go"), x = el("button", "text-btn", bcBusy.has(b.eventId) ? "取消中…" : "取消");
+      go.type = "button"; go.append(document.createTextNode(bookText(b)), el("small", "", b.roomName));
+      go.addEventListener("click", () => { $("mineSheet").hidden = true; openRoom(b.room); });
+      x.type = "button"; x.disabled = bcBusy.has(b.eventId);
+      x.addEventListener("click", () => askCancelBooking(b));
+      row.append(go, x);
+      box.append(row);
+    });
+  }
+  $("btnMine").addEventListener("click", () => { if (roomSel) closeRoom(); renderMineList(); $("mineSheet").hidden = false; });
+  $("mineClose").addEventListener("click", () => { $("mineSheet").hidden = true; });
+  $("mineSheet").addEventListener("click", (e) => { if (e.target === $("mineSheet")) $("mineSheet").hidden = true; });
+
+  // ----- 開始錄這場（v6.4）：我在這間的預約，正在進行或 10 分鐘內開始 → 房間選單上直接錄（不用切到錄音分頁找）-----
+  let recMine = null;
+  function renderRecMine(r, now) {
+    const b = myBookings().find((x) => x.room === r.key && x.start - now <= LATE_MS && x.end > now);
+    recMine = b || null;
+    $("rsRec").hidden = !b;
+    if (!b) return;
+    $("rsRec").textContent = "開始錄「" + (b.title || "這場") + "」";
+    if (!(events || []).some((e) => e.id === b.eventId) && !evPromise) loadEvents("開始錄這場", true).then(() => { if (roomSel) renderRoomSheet(); });
+  }
+  $("rsRec").addEventListener("click", () => {
+    const b = recMine, ev = b && events && events.find((e) => e.id === b.eventId);
+    if (!b) return;
+    if (!ev) { toast("還在讀今天的會議，請稍候再按", true); loadEvents("開始錄這場", true).then(() => { if (roomSel) renderRoomSheet(); }); return; }
+    if (isDone(ev)) { toast(DONE_HINT, true); return; }
+    closeRoom(false);
+    // 同錄音分頁的「開始錄音」：差 10 分鐘以上先確認；點擊當下呼叫 startMeeting（iPhone 要在點擊當下開音訊）
+    if (Math.abs(Date.now() - ev.start) > LATE_MS) { askLate(ev); return; }
+    startMeeting({ name: ev.title, ev: ev });
+  });
+
   // 房間選單「我在這間的預約」的「取消」：先確認（樣式同結束會議的動作選單）
   let bcPending = null;
   function askCancelBooking(b) {
@@ -3250,6 +3393,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     if (!on) bk = null;
     $("qHead").textContent = bk ? "預約 " + bk.room.name : "臨時會議";
     $("bkBox").hidden = !bk; $("qNoPick").hidden = !!bk;
+    $("quickSheet").classList.toggle("bkmode", !!bk); // v6.4 預約時人員清單矮一點（時間軸佔了位置）
     if (!bk) $("bkNeed").hidden = true;
     $("qName").placeholder = bk ? "例如：設計審查" : "會議名稱（必填），例如：週會";
   }
@@ -3260,11 +3404,13 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     }
     return bk.days.get(day) || { st: "loading" };
   }
-  // 每 15 分鐘一格：past 今天已經過去｜busy 有預約｜ok 可以當開始時間（之後至少 30 分鐘空著）
+  // 時間軸從幾點開始（v6.4，10/28 Jacky「以現在為準，過期的不需要顯示」）：今天從現在所在的半小時，其他天 08:00
+  const bkFrom = (day) => day === bkToday() ? Math.min(BK_TO - 30, Math.max(BK_FROM, Math.floor((roomNow() - tpeAt(day, 0)) / MIN / 30) * 30)) : BK_FROM;
+  // 每 15 分鐘一格（從 bkFrom 起）：past 今天已經過去｜busy 有預約｜ok 可以當開始時間（之後至少 30 分鐘空著）
   function bkSlots(day) {
     const d = bkData(day), ev = d.st === "ok" ? d.events : [], now = roomNow(), out = [];
     const free = (a, b) => !ev.some((e) => e.start < tpeAt(day, b) && tpeAt(day, a) < e.end);
-    for (let m = BK_FROM; m < BK_TO; m += BK_STEP) {
+    for (let m = bkFrom(day); m < BK_TO; m += BK_STEP) {
       const past = tpeAt(day, m) < now, busy = !free(m, m + BK_STEP);
       out.push({ m: m, past: past, busy: busy, ok: d.st === "ok" && !past && free(m, m + BK_LENS[0]) });
     }
@@ -3372,20 +3518,20 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
       days.append(b);
     });
     $("bkDayNote").hidden = !bk.autoNext;
-    // 時間軸：整點實線、半點虛線；今天已經過去的蓋灰；已預約的色塊；選的時段強調色
-    const line = $("bkLine"), H = (BK_TO - BK_FROM) / BK_STEP * BK_PX, y = (m) => (m - BK_FROM) / BK_STEP * BK_PX;
+    // 時間軸：整點實線、半點虛線；今天從現在所在的半小時開始（v6.4），這半小時已經過去的那截蓋灰；已預約的色塊；選的時段強調色
+    const from = bkFrom(day), line = $("bkLine"), H = (BK_TO - from) / BK_STEP * BK_PX, y = (m) => (m - from) / BK_STEP * BK_PX;
     line.textContent = ""; line.style.height = H + "px";
     if (day === today) {
       const nowM = (roomNow() - tpeAt(day, 0)) / MIN;
-      if (nowM > BK_FROM) { const p = el("div", "bk-past"); p.style.height = (Math.min(y(nowM), H) + 10) + "px"; line.append(p); }
+      if (nowM > from) { const p = el("div", "bk-past"); p.style.height = (Math.min(y(nowM), H) + 10) + "px"; line.append(p); }
     }
-    for (let m = BK_FROM; m <= BK_TO; m += 30) {
+    for (let m = from; m <= BK_TO; m += 30) {
       const h = el("div", "bk-h" + (m % 60 ? " half" : "")); h.style.top = y(m) + "px";
-      if (!(m % 60)) h.append(el("b", "", mHM(m)));
+      if (!(m % 60) || m === from) h.append(el("b", "", mHM(m))); // 今天從半點開始時，第一條線也寫時間（v6.4）
       line.append(h);
     }
     info.ev.forEach((e) => {
-      const a = Math.max((e.start - tpeAt(day, 0)) / MIN, BK_FROM), b = Math.min((e.end - tpeAt(day, 0)) / MIN, BK_TO);
+      const a = Math.max((e.start - tpeAt(day, 0)) / MIN, from), b = Math.min((e.end - tpeAt(day, 0)) / MIN, BK_TO);
       if (b <= a) return;
       const box = el("div", "bk-ev" + (e.private ? " priv" : ""), tpeHM(e.start) + "–" + tpeHM(e.end) + " " + (e.private ? "已預約" : e.title || "（沒有標題）"));
       box.style.top = y(a) + "px"; box.style.height = Math.max(y(b) - y(a) - 1, BK_PX - 1) + "px";
@@ -3405,14 +3551,14 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
       load.append(el("span", "", "讀不到這天的預約（" + d.err + "）"), again);
     }
     if (scroll && bk.start >= 0) $("bkScroll").scrollTop = Math.max(0, y(bk.start) - 60);
-    else if (scroll) $("bkScroll").scrollTop = day === today ? Math.max(0, y((roomNow() - tpeAt(day, 0)) / MIN) - 60) : y(9 * 60) - 20;
-    // 開始時間（iOS 會用滾輪選）：不能選的停用，寫原因；今天空著時第一個是「現在（13:42）」（v6.3）
+    else if (scroll) $("bkScroll").scrollTop = day === today ? 0 : y(9 * 60) - 20;
+    // 開始時間（iOS 會用滾輪選）：已經過去的不列（v6.4）；有人預約的停用，寫原因；今天空著時第一個是「現在（13:42）」（v6.3）
     const sel = $("bkStart"); sel.textContent = "";
     const ok = info.slots.filter((x) => x.ok), nowOk = bkNowOk(), any = ok.length || nowOk;
     if (!any) sel.append(el("option", "", d.st === "ok" ? "這天沒有空檔" : "—"));
     if (nowOk) { const o = el("option", "", "現在（" + mHM(bkNowM()) + "）"); o.value = "now"; sel.append(o); }
-    info.slots.forEach((x) => {
-      const o = el("option", "", mHM(x.m) + (x.ok ? "" : x.past ? "（已過）" : "（有人預約）"));
+    info.slots.filter((x) => !x.past).forEach((x) => {
+      const o = el("option", "", mHM(x.m) + (x.ok ? "" : "（有人預約）"));
       o.value = String(x.m); o.disabled = !x.ok;
       if (any) sel.append(o);
     });
@@ -3454,6 +3600,15 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     const b = bk, day = b.day, s = b.start, len = b.len, ids = pickedIds();
     // 同樣的內容再按一次（上次逾時、連線失敗）沿用同一個 requestId：後端不會重複預約
     const sig = [b.room.key, day, s, len, raw, ids.join(",")].join("|");
+    // v6.4 這支手機同一段時間已經訂了（按錯房間再訂一次）：先確認；確認過同樣的內容就不再問
+    const t0 = tpeAt(day, s), t1 = tpeAt(day, s + len);
+    const dup = myBookings().find((x) => x.start < t1 && t0 < x.end);
+    if (dup && b.dupOk !== sig) {
+      b.dupAsk = sig;
+      $("dupText").textContent = bookText(dup) + "（" + dup.roomName + "）。還要再預約" + b.room.name + "嗎？";
+      $("dupConfirm").hidden = false;
+      return;
+    }
     if (!b.req || b.req.sig !== sig) b.req = { sig: sig, id: prefixOf(new Date(), cleanName(raw)) + "_" + Math.random().toString(36).slice(2).padEnd(6, "0").slice(0, 6) };
     const body = { action: "createEvent", title: raw.slice(0, 60), room: b.room.key, start: day + "T" + mHM(s) + ":00+08:00", minutes: len, requestId: b.req.id };
     if (ids.length) body.memberIds = ids;
@@ -3471,10 +3626,10 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
         start: isFinite(vs) ? vs : tpeAt(day, s), end: isFinite(ve) ? ve : tpeAt(day, s + len) };
       myBookPut(mine);
       if (bk === b) closeBook();
-      toast("已預約 " + what, false, "到時候在「錄音」分頁選這場開始錄音", { label: "復原", ms: 10000, fn: () => cancelBooking(mine, "復原") });
+      toast("已預約 " + what, false, "到時候點這間就能開始錄音", { label: "復原", ms: 10000, fn: () => cancelBooking(mine, "復原") });
       // 後端已經清掉那天的快取：重新讀會議室；今天的話「錄音」分頁的清單也重新讀
-      loadRooms("預約了" + b.room.name);
-      if (day === bkToday()) loadEvents("預約了今天的會議室");
+      loadRooms("預約了" + b.room.name, true);
+      if (day === bkToday()) loadEvents("預約了今天的會議室", true);
       return;
     }
     const why = v.reject || v.fail;
@@ -3484,11 +3639,14 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     if (v.roomBusy) bkLoad(day);   // 重新讀那天，讓使用者看到被誰占了、改時間
     else { bkFixStart(); bkRender(); }
   }
+  $("btnDupGo").addEventListener("click", () => { $("dupConfirm").hidden = true; if (bk && bk.dupAsk) { bk.dupOk = bk.dupAsk; bookGo(); } });
+  $("btnDupBack").addEventListener("click", () => { $("dupConfirm").hidden = true; });
+  $("dupConfirm").addEventListener("click", (e) => { if (e.target === $("dupConfirm")) $("dupConfirm").hidden = true; });
   // v6.3 點時間軸只選得到整點、半點（往下對齊到 30 分；15、45 分從開始選單選）；點到現在這半小時、整點半點已經過了 →「現在」
   $("bkLine").addEventListener("click", (e) => {
     if (!bk) return;
     const yy = e.clientY - $("bkLine").getBoundingClientRect().top;
-    const m = BK_FROM + Math.floor(yy / (BK_PX * 30 / BK_STEP)) * 30, s = bkSlots(bk.day).slots.find((x) => x.m === m);
+    const m = bkFrom(bk.day) + Math.floor(yy / (BK_PX * 30 / BK_STEP)) * 30, s = bkSlots(bk.day).slots.find((x) => x.m === m);
     if (s && !s.ok && bkNowOk() && bkNowM() >= m && bkNowM() < m + 30) bkPick("now");
     else bkPick(m);
   });
@@ -3505,7 +3663,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   async function roomsRefreshTap() {
     if (roomsSpin) return;
     roomsSpin = true; $("btnRoomsRefresh").classList.add("spin");
-    const t0 = Date.now(), r = await loadRooms("重新讀取");
+    const t0 = Date.now(), r = await loadRooms("重新讀取", true);
     await sleep(Math.max(0, 600 - (Date.now() - t0)));
     roomsSpin = false; $("btnRoomsRefresh").classList.remove("spin");
     if (r === "ok") toast("已更新");
@@ -3514,6 +3672,8 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   $("btnRoomsRefresh").addEventListener("click", roomsRefreshTap);
   $("btnGear3").addEventListener("click", openSettings);
   setInterval(() => { if (screen === "rooms" && !document.hidden) loadRooms("定時"); }, ROOMS_MS);
+  // v6.4 開會開始、結束不用等下一次讀取：每 30 秒用現在的時間重畫（資料是整天的預約；手指在地圖上時不重畫）
+  setInterval(() => { if (screen === "rooms" && !document.hidden && roomsData && !ptrs.size) renderRooms(); }, 30000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden && screen === "rooms") loadRooms("回到畫面"); });
 
   // ----- 分頁列 -----
