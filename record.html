@@ -24,8 +24,14 @@
              內部變數、mv_ 開頭的 localStorage key、doGet 的 service 維持 Meeting View（改了舊資料讀不到）
      v5.6：第一次設定只輸入一個「設定碼」（10/27 Jacky）：設定碼＝base64url({url, key})，和 #setup= 同格式；拿掉「進階」部署網址欄；
            設定頁「更換 key」可以貼設定碼（網址和 key 一起換）或只貼 key（網址不變）；舊的 #setup= 連結照樣能用
+     v6.0：首頁底部分頁列「錄音／會議室」（10/27 Jacky）：「會議室」用 SVG 畫 2.5D 辦公室分身（直拿轉 90 度看、雙指縮放），
+           顯示每間會議室開會中（標題、各部門小人）／私人預約／空閒；點空的那間可以直接開臨時會議並預約（createEvent 帶 room）。
+           配置完全照後端 rooms 的資料畫，網頁裡沒有任何真實名稱；?fake=1 用通用的假配置
+     v6.0.1（10/28）：部門區塊和小人頭上的標籤也會避讓（撞到或超出地圖框先在「、」「・」換行，還是擠就不顯示，會議室標籤優先）
+     v6.1（10/28）：會議室可以預約之後的時段（選日期、時間軸點時間、長度、會議名稱；只預約不錄音，rooms 帶 date、createEvent 帶 start）；
+           點的那間加外框、其他變淡，從列表點先把頁面捲回地圖再放大；?fake=1 的假配置只留會議室（?fake=zones 是有部門區塊的舊假配置，測避讓用）
      放在公開的 GitHub Pages：不能寫死任何網址、key、email、會議內容
-     最後更新: 2026/10/27 -->
+     最後更新: 2026/10/28 -->
 <html lang="zh-Hant-TW">
 <head>
 <meta charset="utf-8">
@@ -258,7 +264,138 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   box-shadow: 0 6px 24px rgb(0 0 0 / .18); display: flex; align-items: center; justify-content: center; gap: 8px; }
 .toast::before { content: ""; width: 8px; height: 8px; border-radius: 4px; background: var(--green); flex: 0 0 auto; }
 .toast.warn::before { background: var(--orange); }
+.toast .two { display: grid; gap: 2px; }
+.toast .two small { font-size: 13px; font-weight: 500; color: var(--muted); }
 #diagCopy { display: block; width: 100%; height: 200px; margin: 0; border: 0; padding: 12px 16px; font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--fg); background: var(--fill); resize: vertical; }
+
+/* v6.0 底部分頁列（錄音／會議室）：只在首頁兩個分頁出現；分頁顏色跟 App 其他按鈕一樣用藍色 */
+:root { --tabh: calc(50px + env(safe-area-inset-bottom)); }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: flex; justify-content: center; background: var(--bar);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border-top: 1px solid var(--sep); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.tab { flex: 0 1 200px; display: grid; justify-items: center; align-content: center; gap: 1px; height: 49px; border: 0; background: transparent; color: var(--muted);
+  font: inherit; font-size: 11px; font-weight: 500; cursor: pointer; padding: 0; }
+.tab .ico { width: 26px; height: 26px; stroke-width: 1.7; }
+.tab.on { color: var(--blue); }
+body.tabbed .screen { padding-bottom: var(--tabh); }
+body.tabbed .bar { bottom: var(--tabh); padding-bottom: 12px; }
+
+/* v6.0 會議室：Claude 暖橘當強調色（開會中的房間、主按鈕）；地圖色票亮暗各一組，暗色的地板壓暗不刺眼 */
+:root {
+  --accent: #d97757; --accent-soft: rgb(217 119 87 / .14);
+  --m-bg: #ffffff; --m-floor: #f5f2ed; --m-slab: #e2ddd4; --m-dept: #ebe6dd; --m-common: #f0ede8; --m-line: #d8d2c8;
+  --m-room: #fbfaf8; --m-room-side: #ddd7cd; --m-wall: rgb(214 207 196 / .9); --m-wall-front: rgb(214 207 196 / .55);
+  --m-busy-room: #fbefe9; --m-busy-wall: rgb(217 119 87 / .45); --m-busy-front: rgb(217 119 87 / .28);
+  --m-head: #f6e3d3; --m-gray: #b9b9bf; --m-shadow: rgb(0 0 0 / .14); --m-pill: rgb(255 255 255 / .94);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #e08a6d; --accent-soft: rgb(224 138 109 / .2);
+    --m-bg: #1c1c1e; --m-floor: #2a2826; --m-slab: #161514; --m-dept: #33302c; --m-common: #2f2d2a; --m-line: #45413b;
+    --m-room: #2f2c29; --m-room-side: #1f1d1b; --m-wall: rgb(82 76 69 / .95); --m-wall-front: rgb(82 76 69 / .6);
+    --m-busy-room: #3a2a23; --m-busy-wall: rgb(224 138 109 / .5); --m-busy-front: rgb(224 138 109 / .3);
+    --m-head: #e9d2bf; --m-gray: #7c7c82; --m-shadow: rgb(0 0 0 / .4); --m-pill: rgb(44 44 46 / .94);
+  }
+}
+.rwrap { width: 100%; max-width: 1100px; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left)); display: flex; flex-direction: column; flex: 1 0 auto; }
+.rwrap > h1 { margin-bottom: 12px; }
+.rgrid { display: grid; gap: 20px; padding-bottom: 24px; }
+.rgrid > * { min-width: 0; }
+.map { position: relative; height: max(300px, calc(100dvh - 300px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); border-radius: 16px; overflow: hidden;
+  background: var(--m-bg); touch-action: none; -webkit-user-select: none; user-select: none; cursor: grab; }
+.map svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.map-labels { position: absolute; inset: 0; pointer-events: none; }
+.map-labels > * { position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; white-space: nowrap; }
+.map-msg { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 24px; text-align: center; font-size: 15px; color: var(--muted); pointer-events: none; }
+.map-msg.ng { color: var(--red); }
+.map-msg:empty { display: none; }
+.stale { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 2; margin: 0; padding: 3px 10px; border-radius: 999px; background: var(--m-pill);
+  font-size: 12px; color: var(--orange); font-weight: 600; white-space: nowrap; box-shadow: 0 1px 4px var(--m-shadow); }
+/* 房間上方的標籤（HTML 疊在地圖上：縮放時字一樣大、永遠是正的） */
+.pill { display: grid; gap: 0; max-width: 160px; padding: 4px 10px 5px; border-radius: 10px; background: var(--m-pill); box-shadow: 0 1px 5px var(--m-shadow);
+  font-size: 12px; line-height: 1.3; color: var(--fg); border: 1.5px solid transparent; }
+.pill b, .pill span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pill span { color: var(--muted); font-size: 11px; }
+.pill.busy, .pill.private { border-color: var(--accent); }
+.pill.free b, .pill.unknown b { font-weight: 600; color: var(--muted); }
+.pill.unknown span { color: var(--red); }
+.zlabel { font-size: 11px; color: var(--muted); opacity: .85; pointer-events: none !important; }
+.zlabel, .tagp { white-space: pre; text-align: center; } /* 換行由程式決定（在「、」「・」後面） */
+.tagp { font-size: 10px; font-weight: 600; line-height: 1.2; padding: 2px 6px; border-radius: 7px; color: #1c1c1e; box-shadow: 0 1px 3px var(--m-shadow); }
+.more-n { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--accent); color: #fff; box-shadow: 0 1px 4px var(--m-shadow); }
+.rm { cursor: pointer; }
+.rm .rim { fill: none; stroke: var(--m-line); stroke-width: 1.5; }
+.rm.busy .rim, .rm.private .rim { stroke: var(--accent); stroke-width: 2.5; }
+.rm.busy .rim { animation: breathe 2.6s ease-in-out infinite; }
+@keyframes breathe { 50% { stroke-opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .rm.busy .rim { animation: none; } }
+/* v6.1 點的那間：強調色粗外框，其他房間和標籤變淡（隔壁正在開會也不會比它顯眼）；關掉選單就恢復 */
+.map.sel .rm:not(.sel) { opacity: .45; }
+.map.sel .rm.sel .rim { stroke: var(--accent); stroke-width: 4; stroke-opacity: 1; animation: none; }
+.map.sel .map-labels > :not(.sel) { opacity: .5; }
+.pill.sel { border: 2px solid var(--accent); z-index: 1; box-shadow: 0 0 0 3px var(--accent-soft), 0 1px 5px var(--m-shadow); }
+/* 會議室列表：狀態圓點（橘＝有人、綠＝空閒、灰＝讀不到）、名稱、標題、時間 */
+button.rrow { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 2px 12px; width: 100%; text-align: left; background: transparent; border: 0;
+  color: var(--fg); font: inherit; padding: 11px 16px; min-height: 56px; cursor: pointer; }
+button.rrow:active, button.rrow.sel { background: var(--fill); }
+.rrow .dot { width: 10px; height: 10px; border-radius: 5px; background: var(--muted); grid-row: 1 / span 2; }
+.rrow.busy .dot, .rrow.private .dot { background: var(--accent); }
+.rrow.free .dot { background: var(--green); }
+.rrow .nm { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.rrow .sub { grid-column: 2; font-size: 14px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rrow .tm { grid-column: 3; grid-row: 1 / span 2; font-size: 14px; color: var(--muted); white-space: nowrap; }
+/* 點房間打開的底部選單：背景只淡淡蓋一層，放大的房間還看得到 */
+.sheet.room { background: rgb(0 0 0 / .12); }
+.sheet.room > .panel { box-shadow: 0 -4px 24px var(--m-shadow); }
+.rs-state { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 600; padding: 0 4px; }
+.rs-state::before { content: ""; width: 10px; height: 10px; border-radius: 5px; background: var(--muted); flex: 0 0 auto; }
+.rs-state.busy::before, .rs-state.private::before { background: var(--accent); }
+.rs-state.free::before { background: var(--green); }
+.rs-state.unknown { color: var(--red); } .rs-state.unknown::before { background: var(--red); }
+.rs-ev { display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 11px 16px; font-size: 15px; }
+.rs-ev .mono { color: var(--muted); }
+.rs-ev .ti { min-width: 0; overflow-wrap: anywhere; }
+.rs-ev.now .mono { color: var(--accent); font-weight: 600; }
+.btn.accent { background: var(--accent); color: #fff; }
+.btn.plain.accent-t { color: var(--accent); }
+/* v6.1 預約：日期一排左右滑；那天 08:00–20:00 的時間軸（每 15 分鐘 14px，框內捲動）；已預約＝淡色塊、選的時段＝強調色 */
+.bk { display: grid; gap: 12px; }
+.bk > * { min-width: 0; }
+.chips button:disabled { opacity: .4; cursor: default; }
+.bk-scroll { position: relative; height: 232px; overflow-y: auto; background: var(--card); border-radius: 12px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.bk-line { position: relative; margin: 10px 12px 10px 56px; cursor: pointer; }
+.bk-h { position: absolute; left: 0; right: 0; border-top: 1px solid var(--sep); pointer-events: none; }
+.bk-h.half { border-top-style: dashed; opacity: .6; }
+.bk-h b { position: absolute; left: -48px; top: -8px; font-size: 12px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bk-past { position: absolute; left: -56px; right: -12px; top: -10px; background: var(--fill); opacity: .7; pointer-events: none; }
+.bk-ev, .bk-sel { position: absolute; left: 0; right: 0; border-radius: 6px; padding: 0 8px; font-size: 12px; line-height: 14px; overflow: hidden;
+  white-space: nowrap; text-overflow: ellipsis; pointer-events: none; display: flex; align-items: center; }
+.bk-ev { background: var(--fill); color: var(--fg); border-left: 3px solid var(--muted); }
+.bk-ev.priv { color: var(--muted); }
+.bk-sel { background: var(--accent); color: #fff; font-weight: 600; box-shadow: 0 1px 4px var(--m-shadow); }
+.bk-load { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px; padding: 16px; text-align: center; font-size: 15px;
+  color: var(--muted); background: var(--card); }
+.bk-load .ico { animation: spin .8s linear infinite; }
+.bk-load.ng { color: var(--red); }
+.bk-row { justify-content: space-between; }
+.bk-row > span { flex: 0 0 auto; }
+.bk-row select { font: inherit; font-size: 17px; color: var(--accent); background: transparent; border: 0; text-align: right; padding: 4px 0; font-variant-numeric: tabular-nums; }
+.bk-row .chips { flex: 0 1 auto; min-width: 0; gap: 6px; }
+.bk-row .chips button { background: var(--fill); padding: 6px 11px; }
+.bk-row .chips button.on { background: var(--blue); color: var(--on); }
+/* 橫拿（手機）：標題收進導覽列、地圖在左、列表在右邊窄欄；底部選單改從右邊出來，不蓋住地圖 */
+@media (orientation: landscape) and (max-height: 560px) {
+  #roomsScr .nav { padding-top: 4px; min-height: 40px; }
+  #roomsScr .rwrap > h1 { display: none; }
+  #roomsScr .nav .ttl { display: inline; }
+  .rgrid { grid-template-columns: 1fr 260px; gap: 12px; padding-bottom: 8px; }
+  .map { height: calc(100dvh - 60px - var(--tabh) - env(safe-area-inset-top)); min-height: 200px; }
+  .rlist { max-height: calc(100dvh - 60px - var(--tabh) - env(safe-area-inset-top)); overflow-y: auto; border-radius: 12px; }
+  .rlist .cap { display: none; }
+  .sheet.room { align-items: stretch; justify-content: flex-end; }
+  .sheet.room > .panel { width: 340px; max-height: none; height: 100%; border-radius: 14px 0 0 14px; align-content: start;
+    padding: calc(8px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) 16px; }
+}
+#roomsScr .nav .ttl { display: none; margin-right: 8px; color: var(--fg); font-size: 17px; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -274,6 +411,8 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   <symbol id="i-down" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><line x1="12" y1="17.5" x2="12" y2="21.5"/></symbol>
+  <symbol id="i-rooms" viewBox="0 0 24 24"><path d="M12 3 21 8 12 13 3 8z"/><path d="M3 12.5 12 17.5 21 12.5"/><path d="M3 17 12 22 21 17"/></symbol>
   <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></symbol>
 </svg>
 <div class="toast" id="toast" role="status" hidden></div>
@@ -343,6 +482,35 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     <button class="btn primary" id="btnStart" disabled>開始錄音</button>
   </div></div>
 </section>
+
+<!-- B2. 會議室（v6.0）：辦公室的 2.5D 分身＋會議室列表；配置完全照後端 rooms 的資料畫（公開網頁不寫任何真實名稱） -->
+<section class="screen" id="roomsScr" hidden>
+  <div class="rwrap">
+    <div class="nav">
+      <span class="left"><b class="ttl">會議室</b><span class="sample" id="fakeBanner5" hidden>範例資料・假上傳</span></span>
+      <button class="icon-btn" type="button" id="btnRoomsRefresh" aria-label="重新讀取會議室"><svg class="ico"><use href="#i-refresh"/></svg></button>
+      <button class="icon-btn" type="button" id="btnGear3" aria-label="設定"><svg class="ico"><use href="#i-gear"/></svg></button>
+    </div>
+    <h1>會議室</h1>
+    <div class="rgrid">
+      <div class="map" id="mapBox">
+        <svg id="mapSvg" aria-hidden="true"><g id="mapWorld"></g></svg>
+        <div class="map-labels" id="mapLabels"></div>
+        <p class="map-msg" id="mapMsg"></p>
+        <p class="stale" id="roomsStale" hidden></p>
+      </div>
+      <div class="rlist">
+        <p class="cap">現在</p>
+        <div class="list" id="roomList"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<nav class="tabbar" id="tabbar" hidden>
+  <button class="tab" type="button" id="tabRec"><svg class="ico"><use href="#i-mic"/></svg>錄音</button>
+  <button class="tab" type="button" id="tabRooms"><svg class="ico"><use href="#i-rooms"/></svg>會議室</button>
+</nav>
 
 <!-- C. 錄音中 -->
 <section class="screen" id="recCard" hidden>
@@ -462,7 +630,18 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 
 <div class="sheet" id="quickSheet" hidden>
   <div class="panel">
-    <div class="panel-head"><button class="text-btn" id="qCancel">取消</button><h2 style="margin:0 auto">臨時會議</h2><span style="width:52px"></span></div>
+    <div class="panel-head"><button class="text-btn" id="qCancel">取消</button><h2 style="margin:0 auto" id="qHead">臨時會議</h2><span style="width:52px"></span></div>
+    <p class="foot-note" id="qRoomNote" style="margin:-8px 4px 0;text-align:center" hidden></p>
+    <!-- v6.1 預約之後的時段：同一個選單換成預約模式（日期 → 那天的時間軸 → 開始、長度；名稱和選人沿用臨時會議的） -->
+    <div class="bk" id="bkBox" hidden>
+      <div class="chips" id="bkDays" role="group" aria-label="日期"></div>
+      <div class="bk-scroll" id="bkScroll"><div class="bk-line" id="bkLine"></div><div class="bk-load" id="bkLoad" hidden></div></div>
+      <div class="list">
+        <label class="item bk-row"><span>開始</span><select id="bkStart" aria-label="開始時間"></select></label>
+        <div class="item bk-row"><span>長度</span><div class="chips" id="bkLens" role="group" aria-label="長度"></div></div>
+      </div>
+      <p class="foot-note warn" id="bkLenNote" style="margin:-6px 4px 0" hidden></p>
+    </div>
     <div class="list"><div class="item"><input type="text" id="qName" maxlength="60" autocomplete="off" placeholder="會議名稱（必填），例如：週會"></div></div>
     <div class="hrow"><span>與會人員</span><span class="warn" id="qCount">已選 0 人</span></div>
     <p class="foot-note" id="qSelfNote" style="margin:-6px 4px 0">記得勾自己，會後才收得到會議記錄</p>
@@ -548,6 +727,26 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   </div>
 </div>
 
+<!-- 會議室的底部選單（v6.0）：點地圖上的房間或列表；讀得到的那間都可以預約（v6.1），空閒時也可以現在就開會 -->
+<div class="sheet room" id="roomSheet" hidden>
+  <div class="panel" id="roomPanel" role="dialog" aria-labelledby="rsName">
+    <div class="panel-head"><h2 id="rsName"></h2>
+      <button class="icon-btn" type="button" id="rsClose" aria-label="關閉"><svg class="ico"><use href="#i-x"/></svg></button></div>
+    <div class="rs-state" id="rsState"></div>
+    <div class="list help" id="rsNow" hidden><p><b id="rsTitle"></b></p><p class="small-muted" id="rsGroups" style="text-align:left"></p></div>
+    <div>
+      <p class="cap">今天還沒結束的預約</p>
+      <div class="list" id="rsEvents"></div>
+    </div>
+    <p class="msg ng" id="rsMsg"></p>
+    <div id="rsGoBox" style="display:grid;gap:6px">
+      <button class="btn accent" type="button" id="rsBook">預約</button>
+      <button class="btn plain accent-t" type="button" id="rsGo">現在就開會（開始錄音）</button>
+      <p class="foot-note warn" id="rsHint" style="margin:0 4px;text-align:center" hidden></p>
+    </div>
+  </div>
+</div>
+
 <!-- 開始時間和會議時間差超過 10 分鐘：先確認是不是這場（v5.5） -->
 <div class="sheet action" id="lateConfirm" hidden>
   <div class="panel action">
@@ -561,7 +760,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 <script>
 (function () {
   "use strict";
-  const VERSION = "record v5.6（10/27）";
+  const VERSION = "record v6.1（10/28）";
   const $ = (id) => document.getElementById(id);
   const pad = (n) => String(n).padStart(2, "0");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -632,11 +831,13 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   window.addEventListener("pagehide", () => lsSet("mv_log", JSON.stringify(logLines)));
 
   let toastTimer = 0;
-  function toast(text, warn) {
+  // sub（v6.1）：第二行說明（小字），停久一點
+  function toast(text, warn, sub) {
     $("toast").textContent = text; $("toast").hidden = false;
+    if (sub) { const two = el("span", "two"); two.append(el("span", "", text), el("small", "", sub)); $("toast").textContent = ""; $("toast").append(two); }
     $("toast").className = "toast" + (warn ? " warn" : "");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { $("toast").hidden = true; }, 3000);
+    toastTimer = setTimeout(() => { $("toast").hidden = true; }, sub ? 5000 : 3000);
   }
 
   // ---------- 手機暫存（IndexedDB；不能用時退回記憶體＋每段直接下載）----------
@@ -696,7 +897,11 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   //     取消之後同前綴的 upload／complete 回 cancelled:true（後端 v0.15）
   //   沒指定 event-live／exp／added／noadd 時 createEvent 不回 invited、added（模擬 v0.6.1 以前的後端）｜假會議的時間以開頁為準，?fakeend=秒數 讓進行中那場提早結束
   const FAKE_BASE = ["1", "fail2", "fail", "doget", "empty", "reject", "slow"];
-  const FAKE_KIND = { todayEvents: "events", members: "members", createEvent: "event", complete: "complete", cancel: "cancel" };
+  //   rooms-…（v6.0 會議室）：預設成功（通用的假配置，6 間涵蓋每一種狀態）｜rooms-fail 一直連線失敗｜rooms-nocount 會議室 A 讀不到與會者（count null）
+  //   roombusy（v6.0）：createEvent 帶 room 時回「這間剛被預約了」（之後那間變成有人預約）；帶 start（v6.1）回「這段時間已經有人預約了」
+  //   toolate（v6.1）：createEvent 帶 start 時回 tooLate「這個時間已經過了」｜zones（v6.1）：用有部門區塊的舊假配置（測區塊標籤避讓）
+  //   rooms 帶 date（v6.1）：那天的範例預約（明天、後天整天空著、之後每天一樣），預約過的時段也看得到
+  const FAKE_KIND = { todayEvents: "events", members: "members", createEvent: "event", complete: "complete", cancel: "cancel", rooms: "rooms" };
   function fakeMode(action) {
     const m = { base: "1" };
     cfg.fake().split(",").forEach((t) => {
@@ -738,6 +943,89 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     ["範例L", "產品事業發展部", ""], ["範例M", "專案業務部", ""], ["範例N", "稽核室", ""], ["範例T", "總經理室", "特助"]
   ].map((a, i) => ({ id: "fake" + pad(i + 1) + "00", name: a[0], dept: a[1], unit: a[2] }));
 
+  // v6.0 會議室的假配置：自己畫的通用平面圖（四角斜切），名稱一律通用；真實配置只在後端
+  // v6.1：跟真實配置 v2 一樣只留會議室（zones 空的）、空白壓縮；?fake=zones 用 v6.0.1 有部門區塊的舊假配置（測區塊標籤避讓）
+  const rect = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  const grid = (xs, ys) => ys.flatMap((y) => xs.map((x) => [x, y]));
+  const FAKE_LAYOUT = {
+    version: 2, size: [720, 395],
+    outline: [[40, 0], [680, 0], [720, 40], [720, 355], [680, 395], [40, 395], [0, 355], [0, 40]],
+    zones: [],
+    rooms: [
+      { key: "r1", label: "會議室 A", poly: [[80, 20], [310, 20], [310, 170], [25, 170], [25, 75]], seats: grid([110, 155, 200, 245, 285], [70, 130]) },
+      { key: "r2", label: "會議室 B", poly: rect(330, 20, 520, 170), seats: grid([370, 425, 480], [70, 130]) },
+      { key: "r3", label: "會議室 C", poly: [[30, 230], [250, 230], [250, 375], [85, 375], [30, 320]], seats: grid([80, 125, 170, 215], [275]).concat(grid([115, 160, 210], [335])) },
+      { key: "r4", label: "會議室 D", poly: rect(270, 230, 530, 375), seats: grid([300, 342, 384, 426, 468, 505], [275, 335]) },
+      { key: "r5", label: "會議室 E", poly: rect(540, 20, 695, 170), seats: grid([580, 655], [70, 130]) },
+      { key: "r6", label: "會議室 F", poly: rect(550, 230, 695, 375), seats: grid([590, 655], [280, 335]) }
+    ]
+  };
+  const FAKE_LAYOUT_ZONES = {
+    version: 1, size: [1300, 560],
+    outline: [[70, 0], [1230, 0], [1300, 70], [1300, 490], [1230, 560], [70, 560], [0, 490], [0, 70]],
+    zones: [ // 真實的區塊名稱常是好幾個部門用「、」連起來：假配置也放幾個長的、彼此靠近的（測標籤換行和避讓）
+      { label: "部門 1、部門 5、部門 6、部門 7", kind: "dept", poly: rect(30, 205, 330, 380) },
+      { label: "部門 8・部門 9・部門 10", kind: "dept", poly: rect(340, 205, 560, 380) },
+      { label: "部門 2", kind: "dept", poly: rect(860, 20, 1240, 170) },
+      { label: "部門 3、部門 11、部門 12", kind: "dept", poly: rect(1090, 205, 1280, 415) },
+      { label: "部門 13、部門 14", kind: "dept", poly: rect(990, 205, 1080, 395) },
+      { label: "部門 4", kind: "dept", poly: rect(545, 20, 840, 170) },
+      { label: "公共區", kind: "common", poly: rect(600, 205, 980, 395) },
+      { label: "入口", kind: "common", poly: rect(560, 420, 720, 545) }
+    ],
+    rooms: [
+      { key: "r1", label: "會議室 A", poly: [[80, 20], [310, 20], [310, 175], [25, 175], [25, 75]], seats: grid([110, 155, 200, 245, 285], [70, 135]) },
+      { key: "r2", label: "會議室 B", poly: rect(330, 20, 520, 175), seats: grid([370, 425, 480], [70, 135]) },
+      { key: "r3", label: "會議室 C", poly: [[30, 400], [250, 400], [250, 545], [85, 545], [30, 490]], seats: grid([80, 125, 170, 215], [445]).concat(grid([115, 160, 210], [505])) },
+      { key: "r4", label: "會議室 D", poly: rect(270, 400, 530, 545), seats: grid([300, 342, 384, 426, 468, 505], [445, 505]) },
+      { key: "r5", label: "會議室 E", poly: rect(1090, 440, 1240, 545), seats: grid([1130, 1195], [475, 520]) },
+      { key: "r6", label: "會議室 F", poly: rect(740, 420, 880, 545), seats: grid([780, 840], [465, 515]) }
+    ]
+  };
+  const fakeBooked = []; // 假後端：{ key, ev }＝這次開頁在會議室開的臨時會議、預約的時段（或 roombusy 時別人剛預約的）
+  // date（v6.1）：今天＝以開頁時間為準的範例；之後的日子用固定的時刻（台北），每天不一樣，後天整天空著
+  function fakeRooms(date) {
+    const n = date ? -fakeDays(date) : 0;
+    const iso = (t) => new Date(t).toISOString();
+    const at = n ? (m) => iso(Date.parse(date + "T00:00:00+08:00") + m * MIN) : (m) => iso(FAKE_T0 + m * MIN);
+    const h = (s) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3)); // "14:30" → 分鐘
+    const ev = (a, b, title, count, groups) => ({ start: at(a), end: at(b), title: title, private: false, count: count, groups: groups });
+    const priv = (a, b) => ({ start: at(a), end: at(b), title: null, private: true, count: null, groups: null });
+    const g = (pairs) => pairs.map((p) => ({ label: p[0], n: p[1] }));
+    const noCount = fakeMode("rooms") === "nocount";
+    const later = n === 1 ? [
+      [ev(h("09:00"), h("10:00"), "範例：晨會", 3, g([["部門 1", 3]])), ev(h("14:00"), h("15:00"), "範例：週會", 6, g([["部門 1", 4], ["部門 2", 2]]))],
+      [ev(h("10:30"), h("12:00"), "範例：設計審查", 4, g([["部門 3", 4]]))], [priv(h("13:00"), h("14:00"))],
+      [ev(h("09:30"), h("11:00"), "範例：專案 A 討論", 5, g([["部門 2", 3], ["部門 1", 2]]))], [], []
+    ] : n === 2 ? [[], [], [], [], [], []] : [
+      [ev(h("10:00"), h("11:00"), "範例：週會", 6, g([["部門 1", 6]]))], [ev(h("13:30"), h("14:30"), "範例：教育訓練", 8, g([["部門 4", 8]]))],
+      [], [priv(h("15:00"), h("16:30"))], [], []
+    ];
+    const rooms = n ? FAKE_LAYOUT.rooms.map((l, i) => ({ key: l.key, name: l.label, capacity: [10, 6, 8, 12, 4, null][i], found: l.key !== "r6", events: l.key === "r6" ? [] : later[i] })) : [
+      { key: "r1", name: "會議室 A", capacity: 10, found: true, events: [
+        ev(-120, -60, "範例：晨會", 3, g([["部門 1", 3]])),
+        ev(-15, 45, "範例：硬體週會", noCount ? null : 6, noCount ? null : g([["部門 1", 4], ["部門 2", 1], ["訪客", 1]])),
+        ev(150, 210, "範例：設計審查", 5, g([["部門 1", 5]]))] },
+      { key: "r2", name: "會議室 B", capacity: 6, found: true, events: [
+        ev(-30, 30, "範例：二〇二六年第四季跨部門專案進度檢討與下一階段規劃", 9, g([["部門 3", 3], ["部門 1", 2], ["部門 4", 2], ["部門 2", 1], ["訪客", 1]]))] },
+      { key: "r3", name: "會議室 C", capacity: 8, found: true, events: [priv(-10, 50), priv(90, 120)] },
+      { key: "r4", name: "會議室 D", capacity: 12, found: true, events: [ev(25, 85, "範例：專案 A 討論", 4, g([["部門 2", 2], ["部門 1", 2]]))] },
+      { key: "r5", name: "會議室 E", capacity: 4, found: true, events: [] },
+      { key: "r6", name: "會議室 F", capacity: null, found: false, events: [] }
+    ];
+    const day = date || today();
+    fakeBooked.filter((b) => ymd(new Date(b.ev.start)) === day).forEach((b) => {
+      const r = rooms.find((x) => x.key === b.key);
+      if (r) r.events = r.events.concat([b.ev]).sort((x, y) => (x.start < y.start ? -1 : 1));
+    });
+    return rooms;
+  }
+  // 假後端：這間在 [a, b) 有沒有任何預約（預約之後的時段用，跟後端一樣有任何重疊就不行）
+  function fakeOverlap(key, date, a, b) {
+    const r = fakeRooms(date).find((x) => x.key === key);
+    return !!r && r.events.some((e) => Date.parse(e.start) < b && a < Date.parse(e.end));
+  }
+
   const fakeTries = {};
   const fakeCancelled = new Set(); // 假後端：取消過的前綴
   window.__mvFakeLog = [];
@@ -768,17 +1056,45 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
           r.moved = up.size; r.inNotebook = up.size;
           return reply(200, r);
         }
-        if (body.action === "createEvent") {
+        // v6.1 預約之後的時段（帶 start）：roombusy／toolate 模式、或那段時間真的有預約 → 明確的失敗；跟後端一樣不縮短
+        const t0 = body.start ? Date.parse(body.start) : Date.now(), t1 = t0 + (body.minutes || 60) * MIN;
+        const bookDay = body.start ? ymd(new Date(t0)) : "";
+        const fakeHas = (t) => new RegExp("(^|,)" + t + "(,|$)").test(cfg.fake());
+        if (body.action === "createEvent" && body.start && fakeHas("toolate")) return reply(200, { ok: false, error: "這個時間已經過了", tooLate: true, action: body.action });
+        if (body.action === "createEvent" && body.room && (fakeHas("roombusy") || (body.start && fakeOverlap(body.room, bookDay, t0, t1)))) {
+          if (!body.start && !fakeBooked.some((b) => b.key === body.room && Date.parse(b.ev.end) > Date.now()))
+            fakeBooked.push({ key: body.room, ev: { start: new Date(Date.now() - MIN).toISOString(), end: new Date(Date.now() + 30 * MIN).toISOString(),
+              title: "範例：別人剛預約的會議", private: false, count: 2, groups: [{ label: "部門 2", n: 2 }] } });
+          if (body.start && !fakeOverlap(body.room, bookDay, t0, t1))
+            fakeBooked.push({ key: body.room, ev: { start: new Date(t0).toISOString(), end: new Date(t0 + 30 * MIN).toISOString(), title: "範例：別人剛預約的會議", private: false, count: 2, groups: [{ label: "部門 2", n: 2 }] } });
+          return reply(200, { ok: false, error: body.start ? "這段時間已經有人預約了" : "這間剛被預約了", roomBusy: true });
+        }
+        if (body.action === "rooms") {
+          // date：今天到 14 天後（同後端 v0.19）
+          if (body.date && !(fakeDays(body.date) <= 0 && fakeDays(body.date) >= -14)) return reply(200, { ok: false, error: "只能看今天到 14 天後的會議室", action: body.action });
+          r.now = new Date().toISOString(); r.date = body.date || today(); r.rooms = fakeRooms(body.date);
+          r.layout = fakeHas("zones") ? FAKE_LAYOUT_ZONES : FAKE_LAYOUT;
+        } else if (body.action === "createEvent") {
           const ids = body.memberIds || [];
+          if (body.room) {
+            r.room = body.room;
+            const groups = new Map();
+            ids.forEach((x) => { const f = FAKE_MEMBERS.find((m) => m.id === x); const k = f ? f.unit || f.dept : "訪客"; groups.set(k, (groups.get(k) || 0) + 1); });
+            // 預約之後的時段（book）也會出現在那天的 todayEvents（真的後端是同一個日曆活動）；重送同一個 requestId 不重複
+            if (!fakeBooked.some((b) => b.req === body.requestId))
+              fakeBooked.push({ key: body.room, req: body.requestId, book: !!body.start, ev: { start: new Date(t0).toISOString(), end: new Date(t1).toISOString(), title: body.title, private: false,
+                count: ids.length, groups: Array.from(groups, (e) => ({ label: e[0], n: e[1] })).sort((a, b) => b.n - a.n) } });
+          }
           const unknown = mode === "unknown" ? ids.slice(0, 1) : ids.filter((x) => !FAKE_MEMBERS.some((f) => f.id === x));
-          r.eventId = "fake-event-" + String(body.requestId).slice(-6); r.start = new Date().toISOString();
+          r.eventId = "fake-event-" + String(body.requestId).slice(-6); r.start = new Date(t0).toISOString(); r.end = new Date(t1).toISOString();
           r.guests = ids.length - unknown.length;
           if (mode === "live") r.invited = r.guests; else if (mode === "exp") r.invited = 0;
           else if (mode === "added") { r.invited = 0; r.added = r.guests; } else if (mode === "noadd") { r.invited = 0; r.added = 0; }
           if (unknown.length) r.unknownIds = unknown;
         } else if (body.action === "todayEvents") {
           if (body.date && !(fakeDays(body.date) >= 0 && fakeDays(body.date) <= 7)) return reply(200, { ok: false, error: "只能查今天和前 7 天的會議", action: body.action });
-          r.events = mode === "empty" ? [] : fakeEvents(body.date);
+          r.events = mode === "empty" ? [] : fakeEvents(body.date).concat(fakeBooked.filter((b) => b.book && ymd(new Date(b.ev.start)) === (body.date || today()))
+            .map((b) => ({ id: "fake-event-" + String(b.req).slice(-6), title: b.ev.title, start: b.ev.start, end: b.ev.end, guests: b.ev.count })));
           r.now = new Date().toISOString();
         }
         else if (body.action === "members") r.members = FAKE_MEMBERS;
@@ -815,17 +1131,19 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
 
   // 成功判斷（10/20 實測 Apps Script 約 1/10 掉回應，甚至拿到 doGet 的 ok:true）
   // 回傳 { ok, r }｜{ reject: 原因 }（後端明確拒絕，不重試）｜{ retry: 原因 }
-  const NEED = { upload: "fileId", complete: "fileId", createEvent: "eventId", todayEvents: "events", members: "members" };
-  const NEED_LIST = { todayEvents: true, members: true };
+  const NEED = { upload: "fileId", complete: "fileId", createEvent: "eventId", todayEvents: "events", members: "members", rooms: "rooms" };
+  const NEED_LIST = { todayEvents: true, members: true, rooms: true };
   function judge(action, r) {
     if (!r || typeof r !== "object") return { retry: "回應不正確" };
     if (r.action !== undefined && r.action !== action) return { retry: "回應的 action 不符（" + r.action + "）" };
-    if (r.ok === false && r.error) return { reject: String(r.error) };
+    // v6.0：會議室剛被預約（後端 v0.18 roomBusy）也是明確的失敗：不重送；v6.1 預約的時間已經過了（tooLate）也是
+    if (r.ok === false && r.error) return r.roomBusy === true ? { reject: String(r.error), roomBusy: true } : r.tooLate === true ? { reject: String(r.error), tooLate: true } : { reject: String(r.error) };
     if (r.ok !== true) return { retry: "回應不正確" };
     if (r.service !== undefined) return { retry: "收到的是 doGet 的回應" };
     // v5.3：這場已經取消（後端 v0.15，24 小時內）→ 當成功，從手機刪掉
     if (r.cancelled === true && (action === "upload" || action === "complete")) return { ok: true, r: r };
     if (action === "cancel" && typeof r.moved !== "number") return { retry: "回應缺少 moved" };
+    if (action === "rooms" && !(r.layout && Array.isArray(r.layout.rooms))) return { retry: "回應缺少 layout" };
     const f = NEED[action];
     if (f && (NEED_LIST[action] ? !Array.isArray(r[f]) : !r[f])) return { retry: "回應缺少 " + f };
     return { ok: true, r: r };
@@ -1500,6 +1818,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   function renderCount() {
     const n = pickedIds().length;
     $("qCount").textContent = "已選 " + n + " 人";
+    if (bk) { bkButton(); return; } // v6.1 預約模式：主按鈕寫預約的時段
     $("qStart").textContent = "開始（已選 " + n + " 人）";
   }
   function renderQuick() {
@@ -1537,12 +1856,19 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     } else if (memState === "stale") msg = "更新名單失敗，用手機上次的名單";
     else if (!shown.length) msg = q ? "找不到「" + q + "」" : "這裡沒有人";
     $("qMsg").textContent = msg; $("qMsg").className = "msg " + cls;
-    $("qStart").hidden = !list.length;
+    $("qStart").hidden = !list.length && !bk; // 預約不一定要選人：讀不到名單也可以預約
     renderCount();
   }
 
   // 每次打開都從「全部」開始：第一組就是硬體研發組，不用點任何 chip
-  function openQuick() {
+  // room（v6.0）：從會議室的「在這裡開臨時會議」來的 { key, name, until }；從錄音分頁來的沒有
+  let quickRoom = null;
+  let bk = null; // v6.1 預約模式（見「預約之後的時段」）；null＝臨時會議
+  function openQuick(room) {
+    bkMode(null); // v6.1：同一個選單也當預約用，回到臨時會議的樣子
+    quickRoom = room && room.key ? room : null;
+    $("qRoomNote").hidden = !quickRoom;
+    $("qRoomNote").textContent = quickRoom ? "在" + quickRoom.name + "開，" + (quickRoom.until ? "可以用到 " + HM(localTime(quickRoom.until)) : "預約 1 小時") : "";
     $("qName").value = ""; $("qSearch").value = ""; $("qErr").textContent = ""; qDept = "";
     $("quickSheet").hidden = false;
     renderQuick();
@@ -1550,8 +1876,8 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     $("qName").focus();
   }
   // 按「開始」先跳確認選單（v5.1，見 askQuick）
-  $("btnQuick").addEventListener("click", openQuick);
-  $("qCancel").addEventListener("click", () => { $("quickSheet").hidden = true; });
+  $("btnQuick").addEventListener("click", () => openQuick());
+  $("qCancel").addEventListener("click", () => { $("quickSheet").hidden = true; if (bk) closeBook(); });
   $("qSearch").addEventListener("input", renderQuick);
 
   // ---------- 錄音 ----------
@@ -1850,26 +2176,40 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   // 臨時會議：建日曆和開始錄音同時進行（建日曆最久要等好幾分鐘，不能讓會議等）
   // 同一個 requestId 重送，後端不會建第二個活動；都失敗照樣錄音
   // 後端 v0.6.2 起回 added＝加進活動的與會者人數（正式模式；不寄邀請信）、invited 一律 0；顯示規則見 guestText()
-  function createEvent(title, memberIds) {
+  // room（v6.0，從會議室開的）：{ key, name, until }：帶 room 預約那間；下一場預約前就要結束，minutes 縮到那時（後端整段時間都要空著）
+  function createEvent(title, memberIds, room) {
     const requestId = prefixOf(new Date(), cleanName(title)) + "_" + Math.random().toString(36).slice(2).padEnd(6, "0").slice(0, 6);
     const res = { eventId: "", mine: null };
+    res.attached = new Promise((r) => { res.attach = r; }); // newMeeting 建好這場時呼叫
     const body = { action: "createEvent", title: title.slice(0, 60), minutes: QUICK_MS / MIN, requestId: requestId };
     if (memberIds.length) body.memberIds = memberIds; // v5.3 不再送 memberId（拿掉「我是誰」）：自己要在選人時勾
-    res.done = request(body, EVENT_RETRY_WAIT, null, "建立日曆活動").then(async (v) => {
-      const m = res.mine;
+    if (room) {
+      body.room = room.key;
+      if (room.until) body.minutes = Math.max(1, Math.min(body.minutes, Math.floor((room.until - roomNow()) / MIN)));
+    }
+    res.verdict = request(body, EVENT_RETRY_WAIT, null, "建立日曆活動" + (room ? "（預約" + room.name + "）" : ""));
+    res.done = res.verdict.then(async (v) => {
+      // 回應比這場建好還早到（v6.0 從會議室開的一定是：先等預約結果才開始錄）→ 等這場建好再寫進去；這間剛被預約了就不會有這場
+      const m = res.mine || (v.roomBusy ? null : await res.attached);
       if (v.ok) {
         res.eventId = v.r.eventId;
         const unknown = Array.isArray(v.r.unknownIds) ? v.r.unknownIds.length : 0;
         const guests = typeof v.r.guests === "number" ? v.r.guests : memberIds.length - unknown;
         const who = guestText(v.r, guests, memberIds.length);
+        const booked = room && v.r.room === room.key;
         log("日曆活動已建立" + (who ? "，" + who : "") + (v.r.duplicate ? "（重送，沿用同一個活動）" : "") +
-          (unknown ? "；" + unknown + " 人不在成員名單" : ""));
+          (unknown ? "；" + unknown + " 人不在成員名單" : "") + (room ? (booked ? "；已預約" + room.name : "；回應沒有 room，會議室可能沒預約到") : ""));
         if (m) {
           m.eventId = res.eventId;
-          m.eventText = "日曆活動已建立" + (who ? "（" + who + "）" : "");
-          m.eventWarn = unknown ? "有 " + unknown + " 人不在成員名單，沒有加進日曆" : "";
+          m.eventText = "日曆活動已建立" + (who ? "（" + who + "）" : "") + (booked ? "・已預約" + room.name : "");
+          m.eventWarn = (unknown ? "有 " + unknown + " 人不在成員名單，沒有加進日曆" : "") + (room && !booked ? (unknown ? "；" : "") + "會議室沒有預約到（後端還不支援）" : "");
           if (m.status !== "done") await saveComplete(m);
         }
+        if (room) loadRooms("預約" + room.name);
+      } else if (v.roomBusy) {
+        // 還沒開始錄音就知道的：startMeeting 不錄、回會議室；等太久才回來的（已經在錄）：照樣錄，只是沒預約到
+        log("會議室已被預約：" + (room ? room.name : "") + (m ? "（已經在錄音，照樣錄）" : ""));
+        if (m) { m.eventText = "這間剛被預約了：照樣錄音，這場沒有對應日曆活動"; m.eventNg = true; }
       } else {
         quickFailed = true;
         if (m) { m.eventText = "日曆活動建立失敗，照樣錄音：這場沒有對應日曆活動"; m.eventNg = true; }
@@ -1910,10 +2250,10 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     const m = { name: t.name, prefix: prefixOf(now, uniqueName(now, cleanName(t.name) || "會議")), start: now.toISOString(),
       t0: Date.now(), createdAt: Date.now(), eventId: ev ? ev.id : "", eventP: quickRes ? quickRes.done : null,
       evStart: ev ? ev.start : 0, evEnd: ev ? ev.end : 0, quick: !!quickRes,
-      // 時間到提醒的基準：日曆結束時間；臨時會議、沒有日曆、補錄已結束的會議 → 從現在起 60 分鐘
-      endAt: ev && ev.end > Date.now() ? ev.end : Date.now() + QUICK_MS,
+      // 時間到提醒的基準：日曆結束時間；臨時會議、沒有日曆、補錄已結束的會議 → 從現在起 60 分鐘；在會議室開、下一場更早開始 → 到那時（v6.0）
+      endAt: ev && ev.end > Date.now() ? ev.end : Math.min(Date.now() + QUICK_MS, t.quick && t.quick.room && t.quick.room.until ? Date.now() + t.quick.room.until - roomNow() : Infinity),
       segments: 0, segNo: 0, saves: [], status: "recording", end: "", endReason: "", completeSent: false, remind: 0 };
-    if (quickRes) quickRes.mine = m;
+    if (quickRes) { quickRes.mine = m; quickRes.attach(m); }
     meetings.set(m.prefix, m);
     histPut(m.prefix, { n: m.name, t: m.t0, a: m.t0, s: 0, st: "rec" });
     return m;
@@ -1950,12 +2290,24 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     headsetOk = ""; $("silentBanner").hidden = true; $("headsetBanner").hidden = true;
     checkSpace();
     agcReset(); // 每一場從 ×64 開始（麥克風還開著時也是）
-    const quick = t.quick ? createEvent(t.name, t.quick.memberIds) : null;
+    const room = t.quick && t.quick.room;
+    const quick = t.quick ? createEvent(t.name, t.quick.memberIds, room) : null;
     const fail = (text, e) => {
       $("startMsg").textContent = text + e.name + "（" + VERSION + "）";
+      if (screen === "rooms") toast(text + e.name, true); // 從會議室開的：錄音分頁的訊息看不到
       log(text + e.name + "：" + e.message);
       recBusy = false; updateStartBtn(); $("btnQuick").disabled = false;
     };
+    // v6.0 在會議室開：先等預約的結果（音訊已經在點擊當下啟動），這間剛被預約了就不錄；等太久照樣錄（建日曆不能讓會議等）
+    if (room) {
+      toast("預約" + room.name + "中…");
+      const v = await within(quick.verdict, ROOM_WAIT_MS);
+      if (v && v.roomBusy) {
+        recBusy = false; updateStartBtn(); $("btnQuick").disabled = false;
+        roomBusyNow(room, v.reject);
+        return;
+      }
+    }
     try { await readyAudio(resumeP, "開始錄音"); } catch (e) { fail("音訊無法啟動：", e); return; }
     try { await ensureMic(); } catch (e) { fail("拿不到麥克風：", e); return; }
     const m = newMeeting(t, quick);
@@ -2220,22 +2572,814 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     if (meeting || leftCount > 0 || upNow.kind === "busy") { e.preventDefault(); e.returnValue = ""; }
   });
 
+  // ---------- 會議室（v6.0）：辦公室的 2.5D 分身 ----------
+  // 配置（外框、部門區塊、會議室、座位）和每間今天的預約都來自後端 rooms；「現在」以回應的 now 為準
+  const ROOMS_MS = (num("roomsevery") || 60) * 1000; // 停在會議室分頁時多久讀一次（?roomsevery=秒數：測試用）
+  const ROOM_WAIT_MS = 15000;  // 在會議室開臨時會議：最多等預約結果多久，再久就照樣開始錄音
+  const MERGE_AT = 3;          // 同一個部門坐了 3 人以上：合併成一個標籤「部門 ×N」（太擠）
+  const TAG_ZOOM = 0.8;        // 放大到這個倍數以上才顯示小人頭上的部門標籤（整張圖時每間只有一個標籤）
+  // 視角：繞垂直軸轉 rot 度、往下看的壓縮 tilt；直拿時轉 90 度讓長邊變直的（換方向看，字還是正的）
+  // （嚴格的等角 45 度不管怎麼轉都是扁的菱形，直拿填不滿：只轉 12 度，看得到側牆又能讓長邊變直的）
+  const VIEWS = { land: { rot: 12, tilt: 0.72 }, port: { rot: 102, tilt: 0.72 } };
+  const SLAB = 14, RAISE = 8, WALL = 20, FIG_H = 46; // 地板厚度、會議室墊高、牆高、小人高（平面圖單位）
+  const DEPT_COLORS = ["#f2b8a0", "#a9c8f0", "#b5ddb0", "#d9b8e8", "#f3d58c", "#9fd8d6", "#f0b3c8", "#c9c2b4"];
+  const deptColor = new Map(); // 部門 → 顏色：第一次出現時依序給，這次開頁內不變
+  const colorOf = (label) => { if (!deptColor.has(label)) deptColor.set(label, DEPT_COLORS[deptColor.size % DEPT_COLORS.length]); return deptColor.get(label); };
+  let roomsData = null, roomsState = "", roomsErr = "", roomsP = null, roomOffset = 0, roomSel = "";
+  const roomNow = () => Date.now() + roomOffset;   // 後端的「現在」
+  const localTime = (t) => t - roomOffset;        // 後端時間 → 這支手機的時間（顯示用）
+
+  function loadRooms(why) {
+    if (!roomsP) roomsP = fetchRooms(why).finally(() => { roomsP = null; });
+    return roomsP;
+  }
+  async function fetchRooms(why) {
+    if (!cfg.fake() && !cfg.url()) { roomsState = "nocfg"; renderRooms(); return "nocfg"; }
+    if (!roomsData) { roomsState = "loading"; renderRooms(); }
+    const v = await request({ action: "rooms" }, EVENT_RETRY_WAIT, null, "讀取會議室");
+    if (v.ok) {
+      try {
+        roomsData = normRooms(v.r); roomsState = "ok"; roomsErr = "";
+        log("會議室 " + roomsData.rooms.length + " 間（" + why + "）");
+      } catch (e) { v.ok = false; roomsErr = "配置讀不懂：" + e.message; }
+    } else roomsErr = v.reject || v.fail;
+    if (!v.ok) { roomsState = roomsData ? "stale" : "fail"; log("讀不到會議室（" + why + "）：" + roomsErr); }
+    renderRooms();
+    return v.ok ? "ok" : "fail";
+  }
+  // 後端資料 → 畫圖用：座標轉數字、時間轉毫秒；layout.rooms 和 rooms 用 key 對應（後端沒回的那間當讀不到）
+  function normRooms(r) {
+    const L = r.layout;
+    const pt = (p) => (Array.isArray(p) && isFinite(p[0]) && isFinite(p[1]) ? [Number(p[0]), Number(p[1])] : null);
+    const poly = (a) => (Array.isArray(a) ? a.map(pt).filter(Boolean) : []);
+    const info = new Map((Array.isArray(r.rooms) ? r.rooms : []).filter((x) => x && x.key).map((x) => [String(x.key), x]));
+    const ev = (e) => ({ start: Date.parse(e.start), end: Date.parse(e.end), title: e.title ? String(e.title) : "", private: e.private === true,
+      count: typeof e.count === "number" ? e.count : null,
+      groups: Array.isArray(e.groups) ? e.groups.filter((g) => g && g.label && g.n > 0).map((g) => ({ label: String(g.label), n: Math.round(g.n) })) : null });
+    const rooms = L.rooms.map((lr) => {
+      const s = info.get(String(lr.key));
+      return { key: String(lr.key), name: String((s && s.name) || lr.label || lr.key), capacity: s && s.capacity > 0 ? Number(s.capacity) : null,
+        found: !!s && s.found !== false, poly: poly(lr.poly), seats: poly(lr.seats),
+        events: (s && Array.isArray(s.events) ? s.events : []).filter(Boolean).map(ev).filter((e) => isFinite(e.start) && isFinite(e.end)).sort((a, b) => a.start - b.start) };
+    });
+    let outline = poly(L.outline);
+    const all = outline.concat(...rooms.map((x) => x.poly));
+    if (!all.length) throw new Error("沒有任何座標");
+    if (outline.length < 3) { // 沒有外框：用全部房間的範圍
+      const xs = all.map((p) => p[0]), ys = all.map((p) => p[1]);
+      outline = [[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)], [Math.min(...xs), Math.max(...ys)]];
+    }
+    const now = Date.parse(r.now);
+    roomOffset = isFinite(now) ? now - Date.now() : 0;
+    return { at: isFinite(now) ? now : Date.now(), outline: outline, rooms: rooms,
+      zones: (Array.isArray(L.zones) ? L.zones : []).map((z) => ({ label: String((z && z.label) || ""), kind: z && z.kind === "dept" ? "dept" : z && z.kind === "common" ? "common" : "other", poly: poly(z && z.poly) })).filter((z) => z.poly.length >= 3) };
+  }
+  // 一間會議室現在的狀態：busy 開會中｜private 私人預約｜free 空閒（next 下一場）｜unknown 讀不到
+  function roomState(r, now) {
+    if (!r.found) return { kind: "unknown" };
+    const cur = r.events.find((e) => e.start <= now && now < e.end);
+    if (cur) return { kind: cur.private ? "private" : "busy", ev: cur };
+    return { kind: "free", next: r.events.find((e) => e.start > now) || null };
+  }
+  const hm = (t) => HM(localTime(t));
+  function roomTexts(r, st) {
+    const end = st.ev ? "到 " + hm(st.ev.end) : "";
+    if (st.kind === "busy") return { title: st.ev.title || "（沒有標題）", sub: r.name + "・" + end, list: st.ev.title || "（沒有標題）", time: end };
+    if (st.kind === "private") return { title: "私人預約", sub: r.name + "・" + end, list: "私人預約", time: end };
+    if (st.kind === "free") return { title: r.name, sub: st.next ? "空閒・下一場 " + hm(st.next.start) : "今天都空著",
+      list: st.next ? "空閒" : "今天都空著", time: st.next ? "下一場 " + hm(st.next.start) : "" };
+    return { title: r.name, sub: "讀不到", list: "讀不到", time: "" };
+  }
+
+  // ----- 畫面 -----
+  function renderRooms() {
+    const msg = { loading: "讀取會議室…", nocfg: "還沒設定連線：按右上角的設定", fail: "讀不到會議室（" + roomsErr + "）：按右上角的重新讀取" }[roomsState] || "";
+    $("mapMsg").textContent = roomsData ? "" : msg;
+    $("mapMsg").className = "map-msg" + (roomsState === "fail" || roomsState === "nocfg" ? " ng" : "");
+    $("roomsStale").hidden = roomsState !== "stale";
+    if (roomsData) $("roomsStale").textContent = "顯示的是 " + hm(roomsData.at) + " 的狀態";
+    renderRoomList();
+    if (screen === "rooms") renderMap();
+    if (roomSel) renderRoomSheet();
+  }
+  function renderRoomList() {
+    const box = $("roomList"); box.textContent = "";
+    box.parentNode.hidden = !roomsData;
+    if (!roomsData) return;
+    const now = roomNow();
+    roomsData.rooms.forEach((r) => {
+      const st = roomState(r, now), tx = roomTexts(r, st);
+      const b = el("button", "rrow " + st.kind + (r.key === roomSel ? " sel" : ""));
+      b.type = "button"; b.dataset.key = r.key;
+      b.append(el("span", "dot"), el("span", "nm", r.name), el("span", "tm mono", tx.time), el("span", "sub", tx.list));
+      b.addEventListener("click", () => openRoom(r.key, true));
+      box.append(b);
+    });
+  }
+
+  // ----- 地圖：SVG 畫幾何（跟著縮放），標籤用 HTML 疊在上面（字永遠一樣大、是正的）-----
+  const NS = "http://www.w3.org/2000/svg";
+  function svgEl(tag, attrs, parent) {
+    const e = document.createElementNS(NS, tag);
+    Object.keys(attrs).forEach((k) => e.setAttribute(k, attrs[k]));
+    if (parent) parent.append(e);
+    return e;
+  }
+  const ptsAttr = (ps) => ps.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
+  const centroid = (poly) => [poly.reduce((s, p) => s + p[0], 0) / poly.length, poly.reduce((s, p) => s + p[1], 0) / poly.length];
+  let map = null; // { mode, W, H, P, depth, S, TX, TY, fit, bbox, labels, rooms: Map(key → 投影後的範圍) }
+  function projector(view, size) {
+    const a = view.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), k = view.tilt, kz = Math.sqrt(1 - k * k);
+    const cx = size[0] / 2, cy = size[1] / 2;
+    return {
+      P: (x, y, z) => { const dx = x - cx, dy = y - cy; return [dx * c - dy * s, (dx * s + dy * c) * k - (z || 0) * kz]; },
+      depth: (x, y) => (x - cx) * s + (y - cy) * c, // 越大越靠近看的人
+      toward: [s, c]
+    };
+  }
+  // 立起來的面：每一條邊從 z0 到 z1；front＝面向看的人（畫在東西前面）
+  function sides(poly, pj) {
+    const c = centroid(poly), out = [];
+    poly.forEach((a, i) => {
+      const b = poly[(i + 1) % poly.length];
+      let nx = b[1] - a[1], ny = a[0] - b[0];
+      if (nx * ((a[0] + b[0]) / 2 - c[0]) + ny * ((a[1] + b[1]) / 2 - c[1]) < 0) { nx = -nx; ny = -ny; }
+      out.push({ a: a, b: b, front: nx * pj.toward[0] + ny * pj.toward[1] > 0 });
+    });
+    return out;
+  }
+  function wall(g, pj, e, z0, z1, style) {
+    const P = pj.P;
+    svgEl("polygon", { points: ptsAttr([P(e.a[0], e.a[1], z0), P(e.b[0], e.b[1], z0), P(e.b[0], e.b[1], z1), P(e.a[0], e.a[1], z1)]), style: style }, g);
+  }
+  const flat = (g, pj, poly, z, style, cls) => svgEl("polygon", Object.assign({ points: ptsAttr(poly.map((p) => pj.P(p[0], p[1], z))), style: style }, cls ? { class: cls } : {}), g);
+
+  // 開會中的小人：坐在 seats 上，人數 = count（超過座位或容納人數的寫 +N）；部門標籤同部門 3 人以上合併
+  function seatPlan(r, st) {
+    const seats = r.seats.length ? r.seats : [centroid(r.poly)];
+    if (st.kind === "private") return { figs: seats.slice(0, 2).map((s) => ({ s: s, gray: true })), more: 0, tags: [] };
+    if (st.kind !== "busy") return { figs: [], more: 0, tags: [] };
+    const e = st.ev;
+    if (e.count === null) return { figs: [{ s: seats[0], plain: true }], more: 0, tags: [] };
+    const shown = Math.min(e.count, seats.length, r.capacity || Infinity);
+    const seq = [];
+    (e.groups || []).forEach((g) => { for (let i = 0; i < g.n; i++) seq.push(g.label); });
+    const figs = seats.slice(0, shown).map((s, i) => ({ s: s, label: seq[i] || "", plain: !seq[i] }));
+    const tags = [], byLabel = new Map();
+    figs.forEach((f, i) => { if (f.label) { if (!byLabel.has(f.label)) byLabel.set(f.label, []); byLabel.get(f.label).push(i); } });
+    byLabel.forEach((idx, label) => {
+      if (idx.length >= MERGE_AT) tags.push({ fig: idx[Math.floor((idx.length - 1) / 2)], text: label + " ×" + idx.length, label: label });
+      else idx.forEach((i) => tags.push({ fig: i, text: label, label: label }));
+    });
+    return { figs: figs, more: Math.max(0, e.count - shown), tags: tags };
+  }
+  function figure(g, p, f) {
+    svgEl("ellipse", { cx: p[0], cy: p[1], rx: 10, ry: 4, style: "fill:var(--m-shadow)" }, g);
+    const body = f.gray ? "var(--m-gray)" : f.plain ? "#c9c2b4" : colorOf(f.label);
+    svgEl("rect", { x: p[0] - 8.5, y: p[1] - 24, width: 17, height: 24, rx: 8.5, style: "fill:" + body }, g);
+    svgEl("circle", { cx: p[0], cy: p[1] - 33, r: 9, style: "fill:" + (f.gray ? "var(--m-gray)" : "var(--m-head)") }, g);
+  }
+
+  function renderMap() {
+    const box = $("mapBox"), W = box.clientWidth, H = box.clientHeight;
+    const world = $("mapWorld"), labels = $("mapLabels");
+    if (!roomsData || !W || !H) { world.textContent = ""; labels.textContent = ""; map = null; return; }
+    const mode = W >= H ? "land" : "port";
+    const keep = map && map.mode === mode && map.W === W && map.H === H ? { S: map.S, TX: map.TX, TY: map.TY } : null;
+    const xs = roomsData.outline.map((p) => p[0]), ys = roomsData.outline.map((p) => p[1]);
+    const size = [Math.min(...xs) + Math.max(...xs), Math.min(...ys) + Math.max(...ys)]; // 以外框中心轉
+    const pj = projector(VIEWS[mode], size), P = pj.P;
+    world.textContent = ""; labels.textContent = "";
+    const now = roomNow();
+    const lab = [];
+    const addLabel = (node, wx, wy, kind, extra) => { labels.append(node); lab.push(Object.assign({ el: node, x: wx, y: wy, kind: kind }, extra || {})); };
+
+    // 地板（有厚度）、部門區塊
+    const out = roomsData.outline;
+    sides(out, pj).filter((e) => e.front).forEach((e) => wall(world, pj, e, -SLAB, 0, "fill:var(--m-slab)"));
+    flat(world, pj, out, 0, "fill:var(--m-floor);stroke:var(--m-line);stroke-width:1;vector-effect:non-scaling-stroke");
+    roomsData.zones.forEach((z) => {
+      flat(world, pj, z.poly, 0, "fill:var(" + (z.kind === "dept" ? "--m-dept" : "--m-common") + ")" + (z.kind === "common" ? ";stroke:var(--m-line);stroke-width:1;stroke-dasharray:4 3;vector-effect:non-scaling-stroke" : ""));
+      if (!z.label) return;
+      const c = centroid(z.poly), p = P(c[0], c[1], 0);
+      const area = Math.abs(z.poly.reduce((s, a, i) => { const b = z.poly[(i + 1) % z.poly.length]; return s + a[0] * b[1] - b[0] * a[1]; }, 0)) / 2;
+      const q = z.poly.map((v) => P(v[0], v[1], 0)), qx = q.map((v) => v[0]), qy = q.map((v) => v[1]);
+      addLabel(el("div", "zlabel", z.label), p[0], p[1], "zone", { text: z.label, area: area, zw: Math.max(...qx) - Math.min(...qx), zh: Math.max(...qy) - Math.min(...qy) });
+    });
+
+    // 會議室：遠的先畫；每間：墊高的底座 → 地板 → 後面的牆 → 小人 → 前面的牆（半透明）→ 牆頂的框
+    const rooms = new Map();
+    roomsData.rooms.filter((r) => r.poly.length >= 3).map((r) => ({ r: r, d: pj.depth(...centroid(r.poly)) })).sort((a, b) => a.d - b.d).forEach(({ r }) => {
+      const st = roomState(r, now), busy = st.kind === "busy" || st.kind === "private";
+      const g = svgEl("g", { class: "rm " + st.kind, "data-room": r.key }, world);
+      const sd = sides(r.poly, pj);
+      sd.filter((e) => e.front).forEach((e) => wall(g, pj, e, 0, RAISE, "fill:var(--m-room-side)"));
+      flat(g, pj, r.poly, RAISE, "fill:var(" + (busy ? "--m-busy-room" : "--m-room") + ")", "fl");
+      sd.filter((e) => !e.front).forEach((e) => wall(g, pj, e, RAISE, RAISE + WALL, "fill:var(" + (busy ? "--m-busy-wall" : "--m-wall") + ")"));
+      const plan = seatPlan(r, st);
+      const figPts = plan.figs.map((f) => P(f.s[0], f.s[1], RAISE));
+      plan.figs.map((f, i) => i).sort((a, b) => pj.depth(...plan.figs[a].s) - pj.depth(...plan.figs[b].s)).forEach((i) => figure(g, figPts[i], plan.figs[i]));
+      sd.filter((e) => e.front).forEach((e) => wall(g, pj, e, RAISE, RAISE + WALL, "fill:var(" + (busy ? "--m-busy-front" : "--m-wall-front") + ")"));
+      flat(g, pj, r.poly, RAISE + WALL, "vector-effect:non-scaling-stroke", "rim");
+      // 投影後的範圍（放大到這間用）
+      const ps = r.poly.flatMap((p) => [P(p[0], p[1], 0), P(p[0], p[1], RAISE + Math.max(WALL, plan.figs.length ? FIG_H : 0))]);
+      const bx = { x0: Math.min(...ps.map((p) => p[0])), x1: Math.max(...ps.map((p) => p[0])), y0: Math.min(...ps.map((p) => p[1])), y1: Math.max(...ps.map((p) => p[1])) };
+      rooms.set(r.key, bx);
+      // 上方的標籤：標題（或私人預約／名稱）＋名稱・時間
+      const tx = roomTexts(r, st);
+      const pill = el("div", "pill " + st.kind);
+      pill.dataset.room = r.key;
+      pill.append(el("b", "", tx.title), el("span", "", tx.sub));
+      addLabel(pill, (bx.x0 + bx.x1) / 2, bx.y0, "pill", { box: bx });
+      plan.tags.forEach((t) => {
+        const p = figPts[t.fig], tag = el("div", "tagp", t.text);
+        tag.style.background = colorOf(t.label); tag.dataset.room = r.key;
+        addLabel(tag, p[0], p[1] - FIG_H + 2, "tag", { text: t.text, room: r.key });
+      });
+      if (plan.more) {
+        const c = centroid(r.poly), p = P(c[0], c[1], RAISE), m = el("div", "more-n", "+" + plan.more);
+        m.dataset.room = r.key;
+        addLabel(m, p[0], p[1] + 6, "more", { text: m.textContent });
+      }
+    });
+
+    // 全部的範圍 → 剛好放進框裡（上面留標籤的位置）；v6.1：只有座位算小人的高度、會議室算牆高（原本整個外框都加小人高度，空白太多）
+    const allPts = out.flatMap((p) => [P(p[0], p[1], -SLAB), P(p[0], p[1], 0)]).concat(...roomsData.rooms.map((r) =>
+      r.poly.map((p) => P(p[0], p[1], RAISE + WALL)).concat(r.seats.map((p) => P(p[0], p[1], RAISE + FIG_H)))));
+    const bb = { x0: Math.min(...allPts.map((p) => p[0])), x1: Math.max(...allPts.map((p) => p[0])), y0: Math.min(...allPts.map((p) => p[1])), y1: Math.max(...allPts.map((p) => p[1])) };
+    const padX = 12, padT = 46, padB = 12;
+    const fS = Math.min((W - 2 * padX) / (bb.x1 - bb.x0), (H - padT - padB) / (bb.y1 - bb.y0));
+    const fit = { S: fS, TX: padX + (W - 2 * padX - (bb.x1 - bb.x0) * fS) / 2 - bb.x0 * fS, TY: padT + (H - padT - padB - (bb.y1 - bb.y0) * fS) / 2 - bb.y0 * fS };
+    map = { mode: mode, W: W, H: H, fit: fit, bb: bb, labels: lab, rooms: rooms, S: fit.S, TX: fit.TX, TY: fit.TY };
+    mapSize = W + "x" + H;
+    if (keep) Object.assign(map, keep);
+    setView(map);
+    box.dataset.mode = mode; // 驗證用
+    markSel();
+  }
+  // 套用縮放／位移：幾何用一個 matrix，標籤逐一換位置
+  // 房間的標籤：放在房間上方；會蓋到別間或別的標籤時改放下方，再不行放在房間上（房間相鄰時常見）；超出左右邊往內推
+  function setView(v) {
+    if (!map) return;
+    map.S = v.S; map.TX = v.TX; map.TY = v.TY;
+    const S = map.S, TX = map.TX, TY = map.TY;
+    $("mapWorld").setAttribute("transform", "matrix(" + [S, 0, 0, S, TX, TY].map((n) => +n.toFixed(4)).join(" ") + ")");
+    const showTags = S >= TAG_ZOOM;
+    const pl = map.labels.filter((l) => l.kind === "pill");
+    pl.forEach((l) => { l.el.style.maxWidth = Math.round(Math.min(220, Math.max(140, (l.box.x1 - l.box.x0) * S + 24))) + "px"; });
+    const sz = pl.map((l) => [l.el.offsetWidth, l.el.offsetHeight]);
+    const scr = (b) => ({ l: S * b.x0 + TX, r: S * b.x1 + TX, t: S * b.y0 + TY, b: S * b.y1 + TY });
+    const rects = pl.map((l) => scr(l.box));
+    const over = (a, b) => Math.max(0, Math.min(a.r, b.r) - Math.max(a.l, b.l)) * Math.max(0, Math.min(a.b, b.b) - Math.max(a.t, b.t));
+    const pos = (l, b) => { l.el.style.transform = "translate(" + b.l.toFixed(1) + "px," + b.t.toFixed(1) + "px)"; };
+    // +N 位置固定（房間中間）：最先放，會議室標籤也要避開它（v6.1：總覽時房間小，會議室標籤放在房間上會蓋到）
+    // 房間在框邊、+N 會被切一半時不顯示
+    const placed = [];
+    map.labels.filter((l) => l.kind === "more").forEach((l) => {
+      const f = labelForms(l)[0], x = S * l.x + TX, y = S * l.y + TY, b = { l: x - f.w / 2, r: x + f.w / 2, t: y, b: y + f.h };
+      l.el.hidden = b.l < 0 || b.r > map.W || b.t < 0 || b.b > map.H;
+      if (!l.el.hidden) { pos(l, b); placed.push(b); }
+    });
+    // 點的那間最先放（v6.1，一定要完整露出來），再來有人的（比較重要），空的後放；候選位置：上、下、房間上 × 置中、往左、往右
+    const first = (l) => (l.el.dataset.room === roomSel ? 2 : 0) + (/busy|private/.test(l.el.className) ? 1 : 0);
+    pl.map((l, i) => i).sort((a, b) => first(pl[b]) - first(pl[a]) || a - b).forEach((i) => {
+      const l = pl[i], [w, h] = sz[i], rr = rects[i], sel = l.el.dataset.room === roomSel;
+      const cx = (rr.l + rr.r) / 2, inside = cx >= 0 && cx <= map.W;
+      let best = null;
+      [rr.t - 4 - h, rr.b + 4, (rr.t + rr.b - h) / 2].forEach((y, k) => [0, -0.5, 0.5].forEach((dx, n) => {
+        let x = cx + dx * w;
+        if (inside) x = Math.min(Math.max(x, w / 2 + 4), map.W - w / 2 - 4);
+        const box = { l: x - w / 2, r: x + w / 2, t: y, b: y + h };
+        let cost = (k === 2 ? w * h * 0.35 : 0) + n * w * h * 0.05; // 放在房間上會蓋到小人、偏離房間：沒地方才這樣放
+        rects.forEach((o, j) => { if (j !== i) cost += over(box, o); });
+        placed.forEach((o) => { cost += 30 * over(box, o); }); // 疊到別的標籤（字被蓋住）比蓋到房間嚴重得多（v6.1：4 → 30）
+        if (inside && (box.t < 0 || box.b > map.H)) cost += w * h * (sel ? 20 : 0.6);
+        if (!best || cost < best.cost - 1) best = { box: box, cost: cost };
+      }));
+      placed.push(best.box);
+      l.el.style.transform = "translate(" + best.box.l.toFixed(1) + "px," + best.box.t.toFixed(1) + "px)";
+    });
+    // 其他標籤照重要性放（+N 已經放好）：小人頭上的部門（離畫面中間近的房間先）→ 部門區塊（面積大的先）
+    // 撞到已經放好的標籤、超出地圖框（部門區塊：或比自己的區塊寬）：先挪位置、在「、」「・」後面換行，還是擠就不顯示
+    const taken = placed.slice();
+    const hits = (b) => taken.some((o) => over({ l: b.l - 2, r: b.r + 2, t: b.t - 2, b: b.b + 2 }, o) > 0);
+    const outside = (b) => b.l < 0 || b.r > map.W || b.t < 0 || b.b > map.H;
+    // within：先只試放得進這個大小的排法（部門區塊：不超出自己的區塊），都不行再放寬
+    const fitLabel = (l, spots, frame, within) => {
+      const fs = labelForms(l);
+      for (const strict of within ? [true, false] : [false]) for (let k = 0; k < fs.length; k++) {
+        if (strict && (fs[k].w > within.w || fs[k].h > within.h)) continue;
+        for (const b of spots(fs[k].w, fs[k].h)) {
+          if ((frame && outside(b)) || hits(b)) continue;
+          if (l.form !== k) { l.form = k; l.el.textContent = fs[k].text; }
+          l.el.hidden = false; pos(l, b); taken.push(b); return;
+        }
+      }
+      l.el.hidden = true;
+    };
+    const mid =(k) => { const r = scr(map.rooms.get(k)); return Math.hypot((r.l + r.r) / 2 - map.W / 2, (r.t + r.b) / 2 - map.H / 2); };
+    const tg = map.labels.filter((l) => l.kind === "tag");
+    if (!showTags) tg.forEach((l) => { l.el.hidden = true; });
+    else tg.map((l, i) => ({ l: l, i: i, d: l.room === roomSel ? -1 : mid(l.room) })).sort((a, b) => a.d - b.d || a.i - b.i).forEach(({ l }) => {
+      const x = S * l.x + TX, y = S * l.y + TY;
+      if (x < 0 || x > map.W || y < 0 || y > map.H) { l.el.hidden = true; return; }
+      // 頭上 → 往左、往右挪 → 再高一層
+      fitLabel(l, (w, h) => [0, -(h + 2)].flatMap((dy) => [0, -0.6, 0.6].map((dx) => ({ l: x - w / 2 + dx * w, r: x + w / 2 + dx * w, t: y - h + dy, b: y + dy }))), true);
+    });
+    map.labels.filter((l) => l.kind === "zone").sort((a, b) => b.area - a.area).forEach((l) => {
+      const x = S * l.x + TX, y = S * l.y + TY;
+      fitLabel(l, (w, h) => [{ l: x - w / 2, r: x + w / 2, t: y - h / 2, b: y + h / 2 }], true, { w: l.zw * S, h: l.zh * S });
+    });
+  }
+  // 標籤可以怎麼排：一行，或在「、」「・」後面換成 2、3…行（每種行數挑最窄的）；字一樣大，量一次就存起來
+  function labelForms(l) {
+    if (l.forms) return l.forms;
+    const e = l.el, segs = l.text.match(/[^、・]+[、・]?|[、・]/g) || [l.text];
+    e.hidden = false;
+    const wOf = (s) => { e.textContent = s; return e.offsetWidth; };
+    const pad = wOf(""), sw = segs.map((s) => wOf(s) - pad);
+    const best = new Map(); // 行數 → { lines, w }
+    for (let i = 0; i < segs.length; i++) for (let j = i; j < segs.length; j++) {
+      const lim = sw.slice(i, j + 1).reduce((a, b) => a + b, 0) + 0.5; // 每一行最寬到某一段連續的字
+      const lines = [], lw = [];
+      segs.forEach((s, n) => {
+        if (lines.length && lw[lw.length - 1] + sw[n] <= lim) { lines[lines.length - 1] += s; lw[lw.length - 1] += sw[n]; }
+        else { lines.push(s); lw.push(sw[n]); }
+      });
+      const w = Math.max(...lw), b = best.get(lines.length);
+      if (!b || w < b.w) best.set(lines.length, { lines: lines, w: w });
+    }
+    l.forms = [...best.keys()].sort((a, b) => a - b).map((n) => {
+      e.textContent = best.get(n).lines.join("\n");
+      return { text: e.textContent, w: e.offsetWidth, h: e.offsetHeight };
+    });
+    e.textContent = l.forms[0].text; l.form = 0;
+    return l.forms;
+  }
+  // 不讓地圖整個拖出框外；縮放在整張圖的 0.9～6 倍之間
+  function clampView(v) {
+    const f = map.fit, S = Math.min(Math.max(v.S, f.S * 0.9), Math.max(f.S * 6, 2.5));
+    const b = map.bb, m = 60;
+    const TX = Math.min(Math.max(v.TX, m - b.x1 * S), map.W - m - b.x0 * S);
+    const TY = Math.min(Math.max(v.TY, m - b.y1 * S), map.H - m - b.y0 * S);
+    return { S: S, TX: TX, TY: TY };
+  }
+  let anim = 0;
+  const reduceMotion = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function animateTo(target) {
+    cancelAnimationFrame(anim);
+    if (!map) return;
+    const from = { S: map.S, TX: map.TX, TY: map.TY }, t0 = performance.now(), T = 380;
+    if (reduceMotion()) { setView(target); return; }
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / T), e = 1 - Math.pow(1 - k, 3);
+      setView({ S: from.S + (target.S - from.S) * e, TX: from.TX + (target.TX - from.TX) * e, TY: from.TY + (target.TY - from.TY) * e });
+      if (k < 1) anim = requestAnimationFrame(step);
+    };
+    anim = requestAnimationFrame(step);
+  }
+  // 放大到這間：放在地圖實際露在畫面上、又沒被底部選單蓋住的那塊（直拿蓋下面、橫拿蓋右邊）的中間
+  // v6.1：頁面往下捲時地圖上面一截在畫面外，也要扣掉（不然點的那間的標籤會被捲出去）
+  function zoomToRoom(key) {
+    if (!map || !map.rooms.has(key)) return;
+    const bx = map.rooms.get(key), br = $("mapBox").getBoundingClientRect(), pr = $("roomPanel").getBoundingClientRect();
+    let vw = map.W, vt = Math.min(Math.max(0, -br.top), map.H - 120), vb = Math.min(map.H, innerHeight - br.top);
+    if (!$("roomSheet").hidden) {
+      if (pr.left > br.left + 40) vw = Math.max(120, Math.min(vw, pr.left - br.left));
+      else vb = Math.min(vb, pr.top - br.top);
+    }
+    const vh = Math.max(120, vb - vt);
+    const S = Math.min(Math.max(Math.min(vw * 0.7 / (bx.x1 - bx.x0), (vh - 60) * 0.75 / (bx.y1 - bx.y0)), map.fit.S), Math.max(map.fit.S * 6, 2.5));
+    animateTo({ S: S, TX: vw / 2 - (bx.x0 + bx.x1) / 2 * S, TY: vt + 30 + (vh - 30) / 2 - (bx.y0 + bx.y1) / 2 * S });
+  }
+
+  // 手勢：一指拖曳、兩指縮放（只動地圖；touch-action:none 讓整頁不捲動、不縮放）；沒移動的短按＝點房間
+  const ptrs = new Map();
+  let gest = null, tap = null;
+  function startGesture() {
+    if (!map) return;
+    const p = Array.from(ptrs.values());
+    gest = { S: map.S, TX: map.TX, TY: map.TY, p: p.slice(0, 2).map((q) => q.slice()) };
+  }
+  function boxPt(e) { const r = $("mapBox").getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+  $("mapBox").addEventListener("pointerdown", (e) => {
+    cancelAnimationFrame(anim);
+    try { $("mapBox").setPointerCapture(e.pointerId); } catch (err) {}
+    ptrs.set(e.pointerId, boxPt(e));
+    tap = ptrs.size === 1 ? { x: e.clientX, y: e.clientY, t: Date.now() } : null;
+    startGesture();
+  });
+  $("mapBox").addEventListener("pointermove", (e) => {
+    if (!ptrs.has(e.pointerId) || !gest || !map) return;
+    ptrs.set(e.pointerId, boxPt(e));
+    if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 8) tap = null;
+    const p = Array.from(ptrs.values());
+    if (p.length >= 2 && gest.p.length >= 2) {
+      const d0 = Math.hypot(gest.p[0][0] - gest.p[1][0], gest.p[0][1] - gest.p[1][1]) || 1;
+      const d = Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]);
+      const m0 = [(gest.p[0][0] + gest.p[1][0]) / 2, (gest.p[0][1] + gest.p[1][1]) / 2], m = [(p[0][0] + p[1][0]) / 2, (p[0][1] + p[1][1]) / 2];
+      const S = clampView({ S: gest.S * d / d0, TX: 0, TY: 0 }).S;
+      setView(clampView({ S: S, TX: m[0] - (m0[0] - gest.TX) / gest.S * S, TY: m[1] - (m0[1] - gest.TY) / gest.S * S }));
+    } else if (p.length === 1) {
+      setView(clampView({ S: gest.S, TX: gest.TX + p[0][0] - gest.p[0][0], TY: gest.TY + p[0][1] - gest.p[0][1] }));
+    }
+  });
+  function endPtr(e) {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.delete(e.pointerId);
+    if (e.type === "pointerup" && tap && !ptrs.size && Date.now() - tap.t < 600) {
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      const r = hit && hit.closest("[data-room]");
+      if (r) openRoom(r.dataset.room);
+    }
+    tap = null;
+    startGesture();
+  }
+  $("mapBox").addEventListener("pointerup", endPtr);
+  $("mapBox").addEventListener("pointercancel", endPtr);
+  $("mapBox").addEventListener("wheel", (e) => {
+    if (!map) return;
+    e.preventDefault();
+    const q = boxPt(e), S = clampView({ S: map.S * Math.exp(-e.deltaY * 0.0015), TX: 0, TY: 0 }).S;
+    setView(clampView({ S: S, TX: q[0] - (q[0] - map.TX) / map.S * S, TY: q[1] - (q[1] - map.TY) / map.S * S }));
+  }, { passive: false });
+  $("mapBox").addEventListener("gesturestart", (e) => e.preventDefault()); // iOS Safari：不要縮放整頁
+  // 轉手機、改視窗大小：重畫（直拿／橫拿換視角）；底部選單開著就重新放大到那間
+  let mapSize = "";
+  function onMapResize() {
+    const box = $("mapBox"), s = box.clientWidth + "x" + box.clientHeight;
+    if (screen !== "rooms" || s === mapSize) return;
+    mapSize = s;
+    renderMap();
+    if (roomSel && map) zoomToRoom(roomSel);
+  }
+  if (window.ResizeObserver) new ResizeObserver(onMapResize).observe($("mapBox"));
+  window.addEventListener("resize", onMapResize);
+
+  // ----- 底部選單 -----
+  // fromList（v6.1）：從下方列表點的，頁面通常已經往下捲、地圖上半部在畫面外：先平滑捲回頂端讓整個地圖露出來，再放大
+  let scrollWait = 0;
+  function openRoom(key, fromList) {
+    if (!roomsData || !roomsData.rooms.some((r) => r.key === key)) return;
+    roomSel = key;
+    $("rsMsg").textContent = "";
+    $("roomSheet").hidden = false;
+    renderRoomSheet(); renderRoomList(); markSel();
+    const wait = ++scrollWait, t0 = performance.now(), up = fromList && $("mapBox").getBoundingClientRect().top < 0;
+    if (up) window.scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" });
+    const go = () => {
+      if (wait !== scrollWait) return;
+      if (up && window.scrollY > 0.5 && performance.now() - t0 < 1200) { requestAnimationFrame(go); return; } // 捲到頂端才算放大的位置
+      zoomToRoom(key);
+    };
+    requestAnimationFrame(go);
+  }
+  function closeRoom(zoomOut) {
+    roomSel = ""; scrollWait++;
+    $("roomSheet").hidden = true;
+    renderRoomList(); markSel();
+    if (zoomOut !== false && map) animateTo(map.fit);
+  }
+  // 點的那間（v6.1）：地圖上的房間和標籤加 sel，其他變淡（CSS）；標籤避讓時它最先放
+  function markSel() {
+    $("mapBox").classList.toggle("sel", !!roomSel);
+    document.querySelectorAll("#mapWorld .rm, #mapLabels [data-room]").forEach((e) => e.classList.toggle("sel", !!roomSel && e.getAttribute("data-room") === roomSel));
+  }
+  function renderRoomSheet() {
+    const r = roomsData && roomsData.rooms.find((x) => x.key === roomSel);
+    if (!r) { closeRoom(); return; }
+    const now = roomNow(), st = roomState(r, now);
+    $("rsName").textContent = r.name + (r.capacity ? "・" + r.capacity + " 人" : "");
+    $("rsState").className = "rs-state " + st.kind;
+    $("rsState").textContent = st.kind === "busy" ? "開會中・到 " + hm(st.ev.end) : st.kind === "private" ? "私人預約・到 " + hm(st.ev.end) :
+      st.kind === "free" ? (st.next ? "空閒・下一場 " + hm(st.next.start) : "今天都空著") : "讀不到：日曆上找不到這間";
+    $("rsNow").hidden = st.kind !== "busy";
+    if (st.kind === "busy") {
+      const e = st.ev;
+      $("rsTitle").textContent = e.title || "（沒有標題）";
+      $("rsGroups").textContent = e.groups && e.groups.length ? e.groups.map((g) => g.label + " " + g.n).join("・") : e.count === null ? "讀不到與會者" : e.count + " 人";
+    }
+    const box = $("rsEvents"); box.textContent = "";
+    box.parentNode.hidden = !r.found;
+    const left = r.events.filter((e) => e.end > now);
+    left.forEach((e) => {
+      const row = el("div", "rs-ev" + (e.start <= now ? " now" : ""));
+      row.append(el("span", "mono", hm(e.start) + "–" + hm(e.end)), el("span", "ti", e.private ? "私人預約" : e.title || "（沒有標題）"));
+      box.append(row);
+    });
+    if (!left.length) box.append(el("div", "rs-ev", "今天沒有其他預約"));
+    // 預約（v6.1）：讀得到的那間都可以（不管現在有沒有人用）；現在就開會：空閒才能開；下一場在 QUICK_MS 內開始：只能用到那時（預約也只到那時）
+    const can = st.kind === "free";
+    $("rsGoBox").hidden = !r.found;
+    $("rsGo").hidden = !can;
+    const soon = can && st.next && st.next.start - now <= QUICK_MS;
+    $("rsHint").hidden = !soon;
+    $("rsHint").textContent = soon ? hm(st.next.start) + " 有人預約，只能用到那時" : "";
+  }
+  $("rsGo").addEventListener("click", () => {
+    const r = roomsData && roomsData.rooms.find((x) => x.key === roomSel);
+    if (!r) return;
+    const now = roomNow(), st = roomState(r, now);
+    if (st.kind !== "free") { renderRoomSheet(); return; }
+    const room = { key: r.key, name: r.name, until: st.next && st.next.start - now <= QUICK_MS ? st.next.start : 0 };
+    log("在" + r.name + "開臨時會議" + (room.until ? "（只能用到 " + hm(room.until) + "）" : ""));
+    closeRoom(false);
+    openQuick(room);
+  });
+  $("rsClose").addEventListener("click", () => closeRoom());
+  $("roomSheet").addEventListener("click", (e) => { if (e.target === $("roomSheet")) closeRoom(); });
+  // 這間剛被預約了（後端 roomBusy）：說原因、重新讀取、打開那間給使用者看（不錄音）
+  async function roomBusyNow(room, why) {
+    const text = why || "這間剛被預約了";
+    toast(text, true);
+    log("沒有開始錄音：" + room.name + text);
+    await loadRooms("這間剛被預約了");
+    if (screen !== "rooms") return;
+    openRoom(room.key);
+    $("rsMsg").textContent = text;
+  }
+
+  // ----- 預約之後的時段（v6.1，10/28 Jacky）：只預約、不錄音（不碰 ensureAudio）；到時候從「錄音」分頁選那場錄 -----
+  // 用臨時會議的選單（名稱、選人）加上日期、時間軸、開始、長度。時間一律台北（rooms 的 date、createEvent 的 start 都是 +08:00）
+  // 今天的預約用地圖的資料（roomsData，每 60 秒更新）；其他天換日期時讀 rooms 帶 date
+  // bk：{ room: { key, name }, list: 7 天, day, days: Map(day → { st: loading｜ok｜fail, events, err }), start: 分鐘（-1＝沒得選）, len, busy, req: { sig, id } }
+  const BK_FROM = 8 * 60, BK_TO = 20 * 60, BK_STEP = 15, BK_PX = 14, BK_DAYS = 7, BK_LENS = [30, 60, 90, 120];
+  const TPE = 8 * 60 * MIN;
+  const tpeDay = (t) => new Date(t + TPE).toISOString().slice(0, 10);   // 毫秒 → 台北的 YYYY-MM-DD
+  const tpeAt = (day, m) => Date.parse(day + "T00:00:00+08:00") + m * MIN; // 那天台北的第 m 分鐘 → 毫秒
+  const tpeHM = (t) => new Date(t + TPE).toISOString().slice(11, 16);
+  const mHM = (m) => pad(Math.floor(m / 60) % 24) + ":" + pad(m % 60);
+  const bkMD = (day) => Number(day.slice(5, 7)) + "/" + Number(day.slice(8, 10));
+  const bkWd = (day) => "週" + "日一二三四五六"[new Date(day + "T12:00:00+08:00").getUTCDay()];
+  const lenText = (n) => (n < 60 ? n + " 分" : n / 60 + " 小時");
+  const bkToday = () => tpeDay(roomNow());
+
+  function bkMode(on) {
+    if (!on) bk = null;
+    $("qHead").textContent = bk ? "預約 " + bk.room.name : "臨時會議";
+    $("bkBox").hidden = !bk; $("qNoPick").hidden = !!bk;
+    $("qName").placeholder = bk ? "例如：設計審查" : "會議名稱（必填），例如：週會";
+  }
+  function bkData(day) {
+    if (day === bkToday() && roomsData) {
+      const r = roomsData.rooms.find((x) => x.key === bk.room.key);
+      return r ? { st: "ok", events: r.events } : { st: "fail", err: "讀不到這間" };
+    }
+    return bk.days.get(day) || { st: "loading" };
+  }
+  // 每 15 分鐘一格：past 今天已經過去｜busy 有預約｜ok 可以當開始時間（之後至少 30 分鐘空著）
+  function bkSlots(day) {
+    const d = bkData(day), ev = d.st === "ok" ? d.events : [], now = roomNow(), out = [];
+    const free = (a, b) => !ev.some((e) => e.start < tpeAt(day, b) && tpeAt(day, a) < e.end);
+    for (let m = BK_FROM; m < BK_TO; m += BK_STEP) {
+      const past = tpeAt(day, m) < now, busy = !free(m, m + BK_STEP);
+      out.push({ m: m, past: past, busy: busy, ok: d.st === "ok" && !past && free(m, m + BK_LENS[0]) });
+    }
+    return { d: d, ev: ev, slots: out, free: free };
+  }
+  // 預設：今天選下一個 15 分整點、而且空著的時間；其他天 09:00 起第一個空檔（都沒有就最早的空檔）；長度 1 小時，不行就挑最長的
+  function bkDefault() {
+    const s = bkSlots(bk.day).slots.filter((x) => x.ok);
+    const pick = s.find((x) => bk.day === bkToday() || x.m >= 9 * 60) || s[0];
+    bk.start = pick ? pick.m : -1;
+    bk.len = 60; bkFixLen();
+  }
+  function bkFixLen() {
+    if (bk.start < 0) return;
+    const f = bkSlots(bk.day).free;
+    if (!f(bk.start, bk.start + bk.len)) bk.len = BK_LENS.filter((n) => f(bk.start, bk.start + n)).pop() || BK_LENS[0];
+  }
+  function openBook(r) {
+    const base = Date.parse(bkToday() + "T12:00:00+08:00");
+    const list = Array.from({ length: BK_DAYS }, (x, i) => tpeDay(base + i * 86400000));
+    bk = { room: { key: r.key, name: r.name }, list: list, day: list[0], days: new Map(), start: -1, len: 60, busy: false, req: null };
+    if (!bkSlots(list[0]).slots.some((x) => x.ok)) bk.day = list[1]; // 今天已經沒有可以選的時間（快 20:00 了、或都滿了）：從明天開始
+    quickRoom = null; bkMode(true);
+    $("qRoomNote").hidden = true;
+    $("qName").value = ""; $("qSearch").value = ""; $("qErr").textContent = ""; qDept = "";
+    $("quickSheet").hidden = false;
+    log("預約" + r.name + "：打開預約畫面");
+    bkSetDay(bk.day);
+    renderQuick();
+    loadMembers("預約選人");
+  }
+  // 關掉預約畫面：回到那間的底部選單（取消、預約成功都是）
+  function closeBook() {
+    const key = bk && bk.room.key;
+    $("quickSheet").hidden = true;
+    bkMode(null);
+    if (key && screen === "rooms") openRoom(key);
+  }
+  function bkSetDay(day) {
+    bk.day = day; bk.start = -1;
+    if (day !== bkToday() && !bk.days.has(day)) bkLoad(day);
+    else bkDefault();
+    bkRender(true);
+  }
+  async function bkLoad(day) {
+    const b = bk;
+    if (day === bkToday()) { await loadRooms("預約：重新讀取"); if (bk === b) { bkFixStart(); bkRender(); } return; }
+    b.days.set(day, { st: "loading" });
+    if (b.day === day) bkRender();
+    const v = await request({ action: "rooms", date: day }, EVENT_RETRY_WAIT, null, "讀取會議室（" + day + "）");
+    let d;
+    if (v.ok && v.r.date !== day) d = { st: "fail", err: "後端還不支援預約之後的時段" };
+    else if (v.ok) {
+      const s = (Array.isArray(v.r.rooms) ? v.r.rooms : []).find((x) => x && String(x.key) === b.room.key);
+      d = s && s.found !== false ? { st: "ok", events: (Array.isArray(s.events) ? s.events : []).filter(Boolean)
+        .map((e) => ({ start: Date.parse(e.start), end: Date.parse(e.end), title: e.title ? String(e.title) : "", private: e.private === true }))
+        .filter((e) => isFinite(e.start) && isFinite(e.end)) } : { st: "fail", err: "日曆上找不到這間" };
+    } else d = { st: "fail", err: v.reject || v.fail };
+    if (d.st === "fail") log("讀不到" + b.room.name + " " + day + " 的預約：" + d.err);
+    b.days.set(day, d);
+    if (bk !== b || b.day !== day) return;
+    bkFixStart(); bkRender(true);
+  }
+  // 資料更新後：選的開始時間還能用就留著，不能用（被預約了、已經過了）就重選預設
+  function bkFixStart() {
+    const s = bkSlots(bk.day).slots.find((x) => x.m === bk.start);
+    if (!s || !s.ok) bkDefault(); else bkFixLen();
+  }
+  function bkPick(m) {
+    const s = bkSlots(bk.day).slots.find((x) => x.m === m);
+    if (!s || !s.ok || bk.busy) return;
+    bk.start = m; bkFixLen(); $("qErr").textContent = "";
+    bkRender();
+  }
+  function bkRender(scroll) {
+    if (!bk) return;
+    const day = bk.day, today = bkToday(), info = bkSlots(day), d = info.d;
+    // 日期：今天、明天、週五 10/30…
+    const days = $("bkDays"); days.textContent = "";
+    bk.list.forEach((x, i) => {
+      const b = el("button", x === day ? "on" : "", i === 0 ? "今天" : i === 1 ? "明天" : bkWd(x) + " " + bkMD(x));
+      b.type = "button"; b.dataset.day = x; b.setAttribute("aria-pressed", x === day ? "true" : "false"); b.disabled = bk.busy;
+      b.addEventListener("click", () => { if (bk && !bk.busy && bk.day !== x) { $("qErr").textContent = ""; bkSetDay(x); } });
+      days.append(b);
+    });
+    // 時間軸：整點實線、半點虛線；今天已經過去的蓋灰；已預約的色塊；選的時段強調色
+    const line = $("bkLine"), H = (BK_TO - BK_FROM) / BK_STEP * BK_PX, y = (m) => (m - BK_FROM) / BK_STEP * BK_PX;
+    line.textContent = ""; line.style.height = H + "px";
+    if (day === today) {
+      const nowM = (roomNow() - tpeAt(day, 0)) / MIN;
+      if (nowM > BK_FROM) { const p = el("div", "bk-past"); p.style.height = (Math.min(y(nowM), H) + 10) + "px"; line.append(p); }
+    }
+    for (let m = BK_FROM; m <= BK_TO; m += 30) {
+      const h = el("div", "bk-h" + (m % 60 ? " half" : "")); h.style.top = y(m) + "px";
+      if (!(m % 60)) h.append(el("b", "", mHM(m)));
+      line.append(h);
+    }
+    info.ev.forEach((e) => {
+      const a = Math.max((e.start - tpeAt(day, 0)) / MIN, BK_FROM), b = Math.min((e.end - tpeAt(day, 0)) / MIN, BK_TO);
+      if (b <= a) return;
+      const box = el("div", "bk-ev" + (e.private ? " priv" : ""), tpeHM(e.start) + "–" + tpeHM(e.end) + " " + (e.private ? "已預約" : e.title || "（沒有標題）"));
+      box.style.top = y(a) + "px"; box.style.height = Math.max(y(b) - y(a) - 1, BK_PX - 1) + "px";
+      line.append(box);
+    });
+    if (bk.start >= 0) {
+      const box = el("div", "bk-sel", mHM(bk.start) + "–" + mHM(bk.start + bk.len));
+      box.style.top = y(bk.start) + "px"; box.style.height = (Math.min(y(bk.start + bk.len), H) - y(bk.start) - 1) + "px";
+      line.append(box);
+    }
+    const load = $("bkLoad");
+    load.hidden = d.st === "ok"; load.className = "bk-load" + (d.st === "fail" ? " ng" : ""); load.textContent = "";
+    if (d.st === "loading") load.append(svgIcon("i-refresh"), el("span", "", "讀取 " + bkMD(day) + " 的預約…"));
+    if (d.st === "fail") {
+      const again = el("button", "btn small plain", "重試"); again.type = "button";
+      again.addEventListener("click", () => bkLoad(day));
+      load.append(el("span", "", "讀不到這天的預約（" + d.err + "）"), again);
+    }
+    if (scroll && bk.start >= 0) $("bkScroll").scrollTop = Math.max(0, y(bk.start) - 60);
+    else if (scroll) $("bkScroll").scrollTop = day === today ? Math.max(0, y((roomNow() - tpeAt(day, 0)) / MIN) - 60) : y(9 * 60) - 20;
+    // 開始時間（iOS 會用滾輪選）：不能選的停用，寫原因
+    const sel = $("bkStart"); sel.textContent = "";
+    const ok = info.slots.filter((x) => x.ok);
+    if (!ok.length) sel.append(el("option", "", d.st === "ok" ? "這天沒有空檔" : "—"));
+    info.slots.forEach((x) => {
+      const o = el("option", "", mHM(x.m) + (x.ok ? "" : x.past ? "（已過）" : "（有人預約）"));
+      o.value = String(x.m); o.disabled = !x.ok;
+      if (ok.length) sel.append(o);
+    });
+    sel.value = bk.start >= 0 ? String(bk.start) : sel.options.length ? sel.options[0].value : "";
+    sel.disabled = !ok.length || bk.busy;
+    // 長度：跟其他預約重疊的停用，寫「14:00 有人預約」
+    const lens = $("bkLens"); lens.textContent = "";
+    let block = null;
+    BK_LENS.forEach((n) => {
+      const can = bk.start >= 0 && info.free(bk.start, bk.start + n);
+      const b = el("button", n === bk.len && bk.start >= 0 ? "on" : "", lenText(n));
+      b.type = "button"; b.dataset.len = String(n); b.disabled = !can || bk.busy; b.setAttribute("aria-pressed", n === bk.len ? "true" : "false");
+      b.addEventListener("click", () => { if (bk && !bk.busy) { bk.len = n; bkRender(); } });
+      lens.append(b);
+    });
+    if (bk.start >= 0) block = info.ev.filter((e) => e.start > tpeAt(day, bk.start) && e.start < tpeAt(day, bk.start + BK_LENS[BK_LENS.length - 1])).sort((p, q) => p.start - q.start)[0];
+    $("bkLenNote").hidden = !block;
+    $("bkLenNote").textContent = block ? tpeHM(block.start) + " 有人預約" : "";
+    bkButton();
+  }
+  // 主按鈕：「預約 10/30（週五）14:00–15:00」
+  function bkButton() {
+    if (!bk) return;
+    const d = bkData(bk.day);
+    $("qStart").disabled = bk.busy || bk.start < 0 || d.st !== "ok";
+    $("qStart").textContent = bk.busy ? "預約中…" : bk.start < 0 ? (d.st === "ok" ? "這天沒有空檔，換一天" : "讀取中…") :
+      "預約 " + bkMD(bk.day) + "（" + bkWd(bk.day) + "）" + mHM(bk.start) + "–" + mHM(bk.start + bk.len);
+  }
+  async function bookGo() {
+    if (!bk || bk.busy || bk.start < 0) return;
+    const raw = $("qName").value.trim();
+    if (!cleanName(raw)) { $("qErr").textContent = "請先輸入會議名稱"; $("qName").focus(); return; }
+    const b = bk, day = b.day, s = b.start, len = b.len, ids = pickedIds();
+    // 同樣的內容再按一次（上次逾時、連線失敗）沿用同一個 requestId：後端不會重複預約
+    const sig = [b.room.key, day, s, len, raw, ids.join(",")].join("|");
+    if (!b.req || b.req.sig !== sig) b.req = { sig: sig, id: prefixOf(new Date(), cleanName(raw)) + "_" + Math.random().toString(36).slice(2).padEnd(6, "0").slice(0, 6) };
+    const body = { action: "createEvent", title: raw.slice(0, 60), room: b.room.key, start: day + "T" + mHM(s) + ":00+08:00", minutes: len, requestId: b.req.id };
+    if (ids.length) body.memberIds = ids;
+    const what = b.room.name + " " + bkMD(day) + " " + mHM(s) + "–" + mHM(s + len);
+    b.busy = true; $("qErr").textContent = ""; bkRender();
+    log("預約" + what + (ids.length ? "（勾選 " + ids.length + " 人）" : "") + "：只預約，不錄音");
+    const v = await request(body, EVENT_RETRY_WAIT, null, "預約" + what);
+    b.busy = false;
+    if (v.ok) {
+      if (ids.length) lsSet("mv_member_pick", JSON.stringify(ids));
+      log("已預約" + what + (v.r.room === b.room.key ? "" : "（回應沒有 room，會議室可能沒預約到）"));
+      if (bk === b) closeBook();
+      toast("已預約 " + what, false, "到時候在「錄音」分頁選這場開始錄音");
+      // 後端已經清掉那天的快取：重新讀會議室；今天的話「錄音」分頁的清單也重新讀
+      loadRooms("預約了" + b.room.name);
+      if (day === bkToday()) loadEvents("預約了今天的會議室");
+      return;
+    }
+    const why = v.reject || v.fail;
+    log("沒有預約到" + what + "：" + why);
+    if (bk !== b) { toast("沒有預約到" + what + "：" + why, true); return; }
+    $("qErr").textContent = v.roomBusy || v.tooLate ? why + (v.roomBusy ? "，請換一個時間" : "") : "沒有預約到：" + why;
+    if (v.roomBusy) bkLoad(day);   // 重新讀那天，讓使用者看到被誰占了、改時間
+    else { bkFixStart(); bkRender(); }
+  }
+  $("bkLine").addEventListener("click", (e) => {
+    if (!bk) return;
+    const yy = e.clientY - $("bkLine").getBoundingClientRect().top;
+    bkPick(BK_FROM + Math.floor(yy / BK_PX) * BK_STEP);
+  });
+  $("bkStart").addEventListener("change", () => bkPick(Number($("bkStart").value)));
+  $("rsBook").addEventListener("click", () => {
+    const r = roomsData && roomsData.rooms.find((x) => x.key === roomSel);
+    if (!r || !r.found) return;
+    closeRoom(false);
+    openBook(r);
+  });
+
+  // ----- 讀取時機：進分頁讀一次、停在分頁每 60 秒、從背景回來；讀取中不清空畫面 -----
+  let roomsSpin = false;
+  async function roomsRefreshTap() {
+    if (roomsSpin) return;
+    roomsSpin = true; $("btnRoomsRefresh").classList.add("spin");
+    const t0 = Date.now(), r = await loadRooms("重新讀取");
+    await sleep(Math.max(0, 600 - (Date.now() - t0)));
+    roomsSpin = false; $("btnRoomsRefresh").classList.remove("spin");
+    if (r === "ok") toast("已更新");
+    else toast(r === "nocfg" ? "還沒設定連線，讀不到會議室" : roomsData ? "更新失敗，顯示的是上次讀到的" : "讀不到會議室，請稍後再試", true);
+  }
+  $("btnRoomsRefresh").addEventListener("click", roomsRefreshTap);
+  $("btnGear3").addEventListener("click", openSettings);
+  setInterval(() => { if (screen === "rooms" && !document.hidden) loadRooms("定時"); }, ROOMS_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && screen === "rooms") loadRooms("回到畫面"); });
+
+  // ----- 分頁列 -----
+  const homeTab = () => (lsGet("mv_tab") === "rooms" ? "rooms" : "start");
+  function pickTab(name) {
+    lsSet("mv_tab", name === "rooms" ? "rooms" : "rec");
+    show(name);
+    if (name === "start") renderEvents();
+  }
+  $("tabRec").addEventListener("click", () => pickTab("start"));
+  $("tabRooms").addEventListener("click", () => pickTab("rooms"));
+
   // ---------- 畫面切換：一次只顯示一個（A 第一次設定、B 今天的會議、C 錄音中、D 完成、設定頁）----------
-  const SCREENS = { setup: "setupScr", start: "startCard", rec: "recCard", done: "doneCard", settings: "sheet", file: "fileScr" };
+  const SCREENS = { setup: "setupScr", start: "startCard", rooms: "roomsScr", rec: "recCard", done: "doneCard", settings: "sheet", file: "fileScr" };
   const STRIP_SLOT = { start: "stripSlotStart", rec: "stripSlotRec", done: "stripSlotDone" };
   let screen = "", backTo = "start";
   function show(name) {
+    const was = screen;
     screen = name;
     $("toast").hidden = true; // 上一個畫面的提示不帶到下一個畫面
     Object.keys(SCREENS).forEach((k) => { $(SCREENS[k]).hidden = k !== name; });
     if (STRIP_SLOT[name]) $(STRIP_SLOT[name]).append($("strips"));
+    // v6.0 分頁列：只在首頁的兩個分頁（錄音中、完成、設定、第一次設定都不顯示）
+    const tabbed = name === "start" || name === "rooms";
+    $("tabbar").hidden = !tabbed; document.body.classList.toggle("tabbed", tabbed);
+    $("tabRec").classList.toggle("on", name === "start"); $("tabRooms").classList.toggle("on", name === "rooms");
+    $("tabRec").setAttribute("aria-current", name === "start" ? "page" : "false"); $("tabRooms").setAttribute("aria-current", name === "rooms" ? "page" : "false");
+    if (name !== "rooms" && roomSel) closeRoom(false);
     renderUpStrip();
     if (name === "start") renderRecent();
     if (name === "setup") renderSetup();
     window.scrollTo(0, 0);
+    if (name === "rooms") { renderRooms(); loadRooms(was === "settings" ? "設定頁回來" : "進入會議室"); }
   }
-  // 回首頁：還沒設定（也不是假上傳）就先到 A
-  function goHome() { show(!cfg.fake() && !cfg.url() ? "setup" : "start"); renderEvents(); }
+  // 回首頁：還沒設定（也不是假上傳）就先到 A；有設定就回上次停的分頁（v6.0）
+  function goHome() { show(!cfg.fake() && !cfg.url() ? "setup" : homeTab()); renderEvents(); }
 
   // ---------- 設定頁 ----------
   function openSettings() {
@@ -2324,8 +3468,8 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   eyeToggle("setupEye", "setupKey", "設定碼"); eyeToggle("cfgEye", "cfgKey", " key");
 
   function refreshBanners() {
-    ["fakeBanner", "fakeBanner2", "fakeBanner3", "fakeBanner4"].forEach((id) => { $(id).hidden = !cfg.fake(); });
-    if (screen === "start" && !cfg.fake() && !cfg.url()) show("setup");
+    ["fakeBanner", "fakeBanner2", "fakeBanner3", "fakeBanner4", "fakeBanner5"].forEach((id) => { $(id).hidden = !cfg.fake(); });
+    if ((screen === "start" || screen === "rooms") && !cfg.fake() && !cfg.url()) show("setup");
   }
 
   // ---------- 設定連結（v5.1）：#setup=<base64url({url,key})>，# 後面不會送到 GitHub Pages；v5.6 設定碼就是 #setup= 後面那段 ----------
@@ -2455,7 +3599,8 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     $("qcOut").hidden = !out.length;
     $("qcOut").textContent = "硬體部以外 " + out.length + " 人：" + out.map((m) => m.name + "（" + (m.unit || m.dept) + "）").join("、");
     // v5.3 拿掉「我是誰」：後端不會再自動加入自己，只寄給勾選的人
-    $("qcNote").textContent = ms.length ? "會議記錄會寄給這 " + ms.length + " 人；不寄邀請信" : "不寄邀請信";
+    $("qcNote").textContent = (ms.length ? "會議記錄會寄給這 " + ms.length + " 人；不寄邀請信" : "不寄邀請信") +
+      (quickRoom ? "；預約" + quickRoom.name + (quickRoom.until ? "（到 " + HM(localTime(quickRoom.until)) + "）" : "（1 小時）") : "");
     $("quickConfirm").hidden = false;
   }
   function quickGo() {
@@ -2465,10 +3610,10 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
     $("quickConfirm").hidden = true;
     if (p.withPeople) lsSet("mv_member_pick", JSON.stringify(p.ids));
     $("quickSheet").hidden = true;
-    const t = { name: p.raw, quick: { memberIds: p.ids } };
-    startMeeting(t);
+    const t = { name: p.raw, quick: { memberIds: p.ids, room: quickRoom } };
+    startMeeting(t); // 點擊當下呼叫（中間不能 await）：從會議室開的也一樣，startMeeting 先啟動音訊才等預約結果
   }
-  $("qStart").addEventListener("click", () => askQuick(true));
+  $("qStart").addEventListener("click", () => (bk ? bookGo() : askQuick(true)));
   $("qNoPick").addEventListener("click", () => askQuick(false));
   $("btnQConfirm").addEventListener("click", quickGo);
   // 返回修改：只關確認選單，臨時會議畫面上的名稱和勾選的人都還在
@@ -2778,7 +3923,7 @@ pre { margin: 0; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywh
   $("lineBanner").hidden = !/\bLine\//.test(navigator.userAgent);
   $("tipsCard").hidden = !!lsGet("mv_tips_seen"); // 開始前的提醒只顯示一次（v5.4 設定頁沒有說明：其他提醒都在需要的時候出現）
   const linked = readSetupLink(); // 用設定連結打開：網址和 key 已經填好
-  show(linked ? "setup" : "start");
+  show(linked ? "setup" : homeTab()); // v6.0：停在上次的分頁
   refreshBanners();
   renderDiag();
   // v5.3：設定連結打開後直接測試連線、成功就到首頁，不用再做任何選擇（失敗才停在設定畫面，按「完成設定」再試）
