@@ -52,6 +52,9 @@
            房間選單只有一個「今天」清單，我訂的那場右邊直接「取消」，其他天的在「之後」；拿掉開會中那塊、各種說明句和成功後的副標；
            預約沒勾人時按鈕寫「請勾選與會人員」；臨時會議只留一顆「開始錄音」；超時橫幅只寫時間；錄音中不寫「日曆活動已建立」；
            今天沒有可以錄的會議時主按鈕就是「臨時會議」；從會議室錄完回來地圖回到總覽；範例標示縮成「範例」
+     v6.6（10/29）：v6.5 留下的 6 項（Jacky「全部 6 項都做」；個人 Claude 改）：首頁「最近的錄音」只在還沒傳完時出現（改叫「還沒傳完」）；
+           錄音中不放設定齒輪；「取消這場」改「丟掉錄音」；預約分兩步（時間和名稱 →「下一步」→ 選人）；
+           橫拿時臨時會議、預約選單分左右兩欄，錄音中計時器縮小，底部分頁列壓矮；返回鍵一律叫「返回」，上傳錄音檔傳完只留「完成」
      放在公開的 GitHub Pages：不能寫死任何網址、key、email、會議內容
      最後更新: 2026/10/28 -->
 <html lang="zh-Hant-TW">
@@ -424,7 +427,10 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
 .sheet-foot { position: sticky; bottom: 0; z-index: 2; display: grid; gap: 8px; margin: 0 -16px; padding: 8px 16px calc(12px + env(safe-area-inset-bottom));
   background: var(--bg); box-shadow: 0 -1px 0 var(--sep); }
 .sheet-foot > .msg:empty { display: none; }
-#quickSheet.bkmode .members { max-height: 26vh; }
+/* v6.6 預約分兩步：第 1 步不顯示選人、第 2 步不顯示時間和名稱 */
+.mem-ctl { display: grid; gap: 12px; }
+#cancelText b { display: block; color: var(--fg); font-size: 15px; } #cancelText span { display: block; margin-top: 4px; }
+#quickSheet.bk1 .mem-part, #quickSheet.bk2 #bkBox, #quickSheet.bk2 #qNameBox { display: none !important; }
 .mine-btn { font-size: 15px; white-space: nowrap; }
 .mine-btn .badge { display: inline-block; min-width: 20px; height: 20px; margin-left: 4px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; line-height: 20px; text-align: center; vertical-align: 1px; }
 #qCount.muted { color: var(--muted); }
@@ -433,6 +439,29 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
 .mine-row .go small { display: block; color: var(--muted); font-size: 13px; }
 .mine-row .text-btn { flex: 0 0 auto; color: var(--red); }
 .mine-row .text-btn:disabled { color: var(--muted); }
+/* v6.6 橫拿（手機）：臨時會議、預約選單分左右兩欄；錄音中計時器縮小；底部分頁列壓矮 */
+@media (orientation: landscape) and (max-height: 560px) {
+  #quickSheet > .panel { width: min(860px, 100%); max-height: calc(100dvh - 8px - env(safe-area-inset-top)); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 16px; align-content: start;
+    padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  #quickSheet .panel-head, #quickSheet #qRoomNote, #quickSheet .sheet-foot { grid-column: 1 / -1; }
+  #quickSheet .bk { display: contents; }
+  #quickSheet.bk1 #bkScroll { grid-column: 1; grid-row: 2 / span 3; height: auto; min-height: 180px; contain: size; }
+  #quickSheet.bk1 #bkDays, #quickSheet.bk1 .bk > .list, #quickSheet.bk1 #qNameBox { grid-column: 2; }
+  #quickSheet:not(.bk1) #qList { grid-column: 2; grid-row: 2 / span 2; max-height: calc(100dvh - 150px); }
+  #quickSheet:not(.bk1) #qNameBox, #quickSheet .mem-ctl { grid-column: 1; }
+  .rec-head { padding-top: 0; }
+  .timer { font-size: 44px; margin-top: 4px; }
+  :root { --tabh: calc(38px + env(safe-area-inset-bottom)); }
+  .tab { grid-auto-flow: column; justify-content: center; gap: 6px; height: 38px; font-size: 13px; }
+  #startCard .nav { padding-top: 4px; min-height: 40px; }
+  #startCard h1 { font-size: 22px; margin-top: 0; margin-bottom: 8px; }
+  button.ev { padding-top: 8px; padding-bottom: 8px; min-height: 0; }
+  .ev .ti { -webkit-line-clamp: 1; }
+  .tab .ico { width: 22px; height: 22px; }
+  .bar { padding-top: 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
+  body.tabbed .bar { padding-bottom: 6px; }
+  .bar .btn { min-height: 44px; padding: 9px 16px; }
+}
 #roomsScr .nav .ttl { margin-right: 8px; color: var(--fg); font-size: 17px; font-weight: 700; }
 </style>
 </head>
@@ -486,7 +515,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     <div id="stripSlotStart"></div>
     <!-- v5.4：這支手機今天和昨天錄的每一場，傳上去了沒（取代 v5.2 首頁的上傳狀態列）；沒錄過就整塊不顯示 -->
     <div id="recentBox" hidden>
-      <p class="cap">最近的錄音</p>
+      <p class="cap">還沒傳完</p>
       <div class="list" id="recentList"></div>
     </div>
     <div class="list help" id="tipsCard" hidden>
@@ -548,7 +577,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
 <section class="screen" id="recCard" hidden>
   <div class="wrap body">
     <div class="nav"><span class="left"><span class="sample" id="fakeBanner2" hidden>範例</span></span>
-      <button class="icon-btn" type="button" id="btnGear2" aria-label="設定"><svg class="ico"><use href="#i-gear"/></svg></button></div>
+      <button class="icon-btn" type="button" id="btnGear2" aria-label="設定" hidden><svg class="ico"><use href="#i-gear"/></svg></button></div>
     <div id="stripSlotRec"></div>
     <div class="strips">
       <div class="strip loud ng" id="silentBanner" role="alert" hidden><span>錄不到聲音，請重新整理頁面</span><button class="btn small" id="btnReload">重新整理</button></div>
@@ -662,7 +691,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
 
 <div class="sheet" id="quickSheet" hidden>
   <div class="panel">
-    <div class="panel-head"><button class="text-btn" id="qCancel">取消</button><h2 style="margin:0 auto" id="qHead">臨時會議</h2><span style="width:52px"></span></div>
+    <div class="panel-head"><button class="text-btn" id="qCancel">返回</button><h2 style="margin:0 auto" id="qHead">臨時會議</h2><span style="width:52px"></span></div>
     <p class="foot-note" id="qRoomNote" style="margin:-8px 4px 0;text-align:center" hidden></p>
     <!-- v6.1 預約之後的時段：同一個選單換成預約模式（日期 → 那天的時間軸 → 開始、長度；名稱和選人沿用臨時會議的） -->
     <div class="bk" id="bkBox" hidden>
@@ -673,13 +702,16 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
         <div class="item bk-row"><span>長度</span><div class="chips" id="bkLens" role="group" aria-label="長度"></div></div>
       </div>
     </div>
-    <div class="list"><div class="item"><input type="text" id="qName" maxlength="60" autocomplete="off" placeholder="會議名稱"></div></div>
-    <div class="hrow"><span>與會人員<small>（記得勾自己）</small></span><span class="warn" id="qCount">已選 0 人</span></div>
-    <input type="search" id="qSearch" placeholder="搜尋姓名、部門、組" autocomplete="off">
-    <div class="chips" id="qDepts"></div>
-    <div class="chips" id="qUnits" hidden></div>
-    <p class="msg" id="qMsg"></p>
-    <div class="list members" id="qList"></div>
+    <div class="list" id="qNameBox"><div class="item"><input type="text" id="qName" maxlength="60" autocomplete="off" placeholder="會議名稱"></div></div>
+    <!-- v6.6 選人（預約分兩步：第 1 步時間和名稱、第 2 步選人；橫拿時這塊在左欄、名單在右欄） -->
+    <div class="mem-ctl mem-part">
+      <div class="hrow"><span>與會人員<small>（記得勾自己）</small></span><span class="warn" id="qCount">已選 0 人</span></div>
+      <input type="search" id="qSearch" placeholder="搜尋姓名、部門、組" autocomplete="off">
+      <div class="chips" id="qDepts"></div>
+      <div class="chips" id="qUnits" hidden></div>
+      <p class="msg" id="qMsg"></p>
+    </div>
+    <div class="list members mem-part" id="qList"></div>
     <!-- v6.4 主按鈕和它上面的提示固定在選單底部（10/28：預約時按鈕被擠到螢幕外、沒勾人的原因也看不到） -->
     <div class="sheet-foot">
       <p class="msg ng" id="qErr"></p>
@@ -695,14 +727,14 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
       <button class="red bold" id="btnEndConfirm">結束並上傳</button></div>
     <div class="group"><button class="bold" id="btnEndCancel">繼續錄音</button></div>
     <!-- v5.3：按錯、忘了拿耳機 → 取消這場（放最下面、一般顏色；按了還有第二次確認） -->
-    <div class="group"><button id="btnCancelMeeting">取消這場</button></div>
+    <div class="group"><button id="btnCancelMeeting">丟掉錄音</button></div>
   </div>
 </div>
 
 <div class="sheet action" id="cancelConfirm" hidden>
   <div class="panel action">
     <div class="group"><div class="t" id="cancelText"></div>
-      <button class="red bold" id="btnCancelConfirm">取消這場</button></div>
+      <button class="red bold" id="btnCancelConfirm">丟掉</button></div>
     <div class="group"><button class="bold" id="btnCancelBack">返回</button></div>
   </div>
 </div>
@@ -710,7 +742,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
 <!-- 上傳錄音檔：選檔 → 是哪一場（依檔案時間自動選）→ 確認上傳（一個畫面一件事；v5.4 先選檔） -->
 <section class="screen" id="fileScr" hidden>
   <div class="wrap body">
-    <div class="nav"><button class="text-btn" id="fileBack" style="margin-right:auto">取消</button>
+    <div class="nav"><button class="text-btn" id="fileBack" style="margin-right:auto">返回</button>
       <span class="sample" id="fakeBanner4" hidden>範例</span></div>
     <h1 id="fileTitle">上傳錄音檔</h1>
     <div id="fileStep1">
@@ -797,7 +829,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     <div class="group">
       <div class="t"><b style="color:var(--fg);font-size:15px">取消這個預約？</b><span id="bcText" style="display:block;margin-top:4px"></span></div>
       <button class="red bold" id="btnBcGo">取消預約</button></div>
-    <div class="group"><button class="bold" id="btnBcBack">不要</button></div>
+    <div class="group"><button class="bold" id="btnBcBack">返回</button></div>
   </div>
 </div>
 
@@ -807,7 +839,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     <div class="group">
       <div class="t"><b style="color:var(--fg);font-size:15px">這段時間你已經預約了</b><span id="dupText" style="display:block;margin-top:4px"></span></div>
       <button class="bold" id="btnDupGo">還是要預約</button></div>
-    <div class="group"><button class="bold" id="btnDupBack">不要</button></div>
+    <div class="group"><button class="bold" id="btnDupBack">返回</button></div>
   </div>
 </div>
 
@@ -817,14 +849,14 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     <div class="group">
       <div class="t"><b id="lateTitle" style="color:var(--fg);font-size:15px"></b><span id="lateText" style="display:block;margin-top:4px"></span></div>
       <button class="bold" id="btnLateGo">開始錄音</button></div>
-    <div class="group"><button id="btnLateBack">取消</button></div>
+    <div class="group"><button id="btnLateBack">返回</button></div>
   </div>
 </div>
 
 <script>
 (function () {
   "use strict";
-  const VERSION = "record v6.5（10/28）";
+  const VERSION = "record v6.6（10/29）";
   const $ = (id) => document.getElementById(id);
   const pad = (n) => String(n).padStart(2, "0");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1576,15 +1608,15 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     }
     if (cancels.length) {
       if (cancels.some((r) => r.status === "failed" && !inFlight.has(r.name))) {
-        return { kind: "fail", title: "已取消，還差一步沒送出", next: "連上網路後按「全部重送」；關掉也沒關係，下次打開會自動補送", small: "", noDl: true };
+        return { kind: "fail", title: "已丟掉，還差一步沒送出", next: "連上網路後按「全部重送」；關掉也沒關係，下次打開會自動補送", small: "", noDl: true };
       }
-      return { kind: "busy", title: "取消中", next: keepText(), small: "" };
+      return { kind: "busy", title: "丟掉中", next: keepText(), small: "" };
     }
     if (lastCancel) {
       // 舊後端（不認得 cancel）：手機端照樣取消；雲端已經有的段落要請 Jacky 處理（v5.4 拿掉 NotebookLM 那行：使用者不需要知道）
       return lastCancel.old && lastCancel.uploaded > 0
-        ? { kind: "cancelled", title: "已取消", next: "已上傳的 " + lastCancel.uploaded + " 段還在雲端，請告訴 Jacky", small: "" }
-        : { kind: "cancelled", title: "已取消，可以關掉了", next: "這場不會產生會議記錄", small: "" };
+        ? { kind: "cancelled", title: "已丟掉", next: "已上傳的 " + lastCancel.uploaded + " 段還在雲端，請告訴 Jacky", small: "" }
+        : { kind: "cancelled", title: "已丟掉，可以關掉了", next: "這場不會產生會議記錄", small: "" };
     }
     if (lastDone) return { kind: "ok", title: "已上傳完成，可以關掉了", next: DONE_NEXT, small: "" };
     const last = Array.from(meetings.values()).filter((m) => m !== meeting && m.end && !m.cancelled).pop();
@@ -1666,7 +1698,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     const m = meetings.get(h.p);
     if (m && m === meeting) return { cls: "busy", text: "錄音中" };
     const recs = lastRecs.filter((r) => r.prefix === h.p);
-    if ((m && m.cancelled) || h.st === "cancelled" || recs.some((r) => r.kind === "cancel")) return { cls: "off", text: "已取消" };
+    if ((m && m.cancelled) || h.st === "cancelled" || recs.some((r) => r.kind === "cancel")) return { cls: "off", text: "已丟掉" };
     if ((m && m.noAudio) || h.st === "none") return { cls: "ng", text: "沒錄到聲音" };
     const left = recs.filter((r) => r.status !== "recording");
     if (left.some((r) => r.status === "failed")) return R_FAIL;
@@ -1691,8 +1723,9 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     if (!recsReady) { $("recentBox").hidden = true; return; }
     const list = histClean().sort((a, b) => (b.a || b.t) - (a.a || a.t)).slice(0, HIST_MAX);
     const box = $("recentList"); box.textContent = "";
-    list.forEach((h) => {
-      const s = recentState(h);
+    // v6.6（10/29 Jacky）：傳好的、丟掉的、沒錄到聲音的不列；只剩上傳中、沒傳上去的（全部傳好整塊不顯示）
+    const todo = list.map((h) => ({ h: h, s: recentState(h) })).filter((x) => x.s.cls === "busy" || x.s.retry);
+    todo.forEach(({ h, s }) => {
       const row = el("div", "rc"); row.dataset.p = h.p; row.dataset.st = s.text;
       const t = el("span", "t mono", HM(h.t));
       const dl = dayLabel(h.t);
@@ -1704,7 +1737,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
       row.append(t, el("span", "ti", h.n), st);
       box.append(row);
     });
-    $("recentBox").hidden = !list.length;
+    $("recentBox").hidden = !todo.length;
   }
 
   $("btnRetry").addEventListener("click", () => retryAll("全部重送"));
@@ -2003,7 +2036,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   }
   // 按「開始」先跳確認選單（v5.1，見 askQuick）
   $("btnQuick").addEventListener("click", () => openQuick());
-  $("qCancel").addEventListener("click", () => { $("quickSheet").hidden = true; if (bk) closeBook(); });
+  $("qCancel").addEventListener("click", () => { if (bk && bk.step === 2) { bkStep(1); return; } $("quickSheet").hidden = true; if (bk) closeBook(); });
   $("qSearch").addEventListener("input", renderQuick);
 
   // ---------- 錄音 ----------
@@ -2526,12 +2559,13 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   // 「已錄 ○ 分鐘會丟掉」：不到 1 分鐘就說不到 1 分鐘
   function recordedText(m) {
     const s = Math.floor((Date.now() - m.t0) / 1000);
-    return s < 60 ? "已錄不到 1 分鐘，會丟掉" : "已錄 " + Math.floor(s / 60) + " 分鐘會丟掉";
+    return s < 60 ? "已錄不到 1 分鐘" : "已錄 " + Math.floor(s / 60) + " 分鐘";
   }
   $("btnCancelMeeting").addEventListener("click", () => {
     if (!meeting) return;
     disarmEnd();
-    $("cancelText").textContent = recordedText(meeting) + "，不會產生會議記錄。確定取消？";
+    $("cancelText").textContent = "";
+    $("cancelText").append(el("b", "", "丟掉這段錄音？"), el("span", "", recordedText(meeting) + "，不會產生會議記錄"));
     $("cancelConfirm").hidden = false;
   });
   const closeCancel = () => { $("cancelConfirm").hidden = true; };
@@ -3397,8 +3431,27 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     if (!on) bk = null;
     $("qHead").textContent = bk ? "預約 " + bk.room.name : "臨時會議";
     $("bkBox").hidden = !bk; $("qNoPick").hidden = true; // v6.5 只留一顆開始錄音
-    $("quickSheet").classList.toggle("bkmode", !!bk); // v6.4 預約時人員清單矮一點（時間軸佔了位置）
     $("qName").placeholder = "會議名稱";
+    bkStepUI();
+  }
+  // v6.6（10/29 Jacky）預約分兩步：1 日期、時間、長度、名稱 →「下一步」→ 2 選人 →「預約 …」；左上「返回」回第 1 步
+  function bkStepUI() {
+    const sh = $("quickSheet");
+    sh.classList.toggle("bk1", !!bk && bk.step === 1); sh.classList.toggle("bk2", !!bk && bk.step === 2);
+    if (bk) bkButton();
+  }
+  function bkStep(n) {
+    if (!bk || bk.busy) return;
+    bk.step = n; $("qErr").textContent = "";
+    bkStepUI();
+    $("quickSheet").querySelector(".panel").scrollTop = 0;
+    if (n === 1) bkRender(true); else renderQuick();
+  }
+  function bkNext() {
+    if (!bk || bk.busy || bk.start < 0) return;
+    if (!cleanName($("qName").value.trim())) { $("qErr").textContent = "請先輸入會議名稱"; $("qName").focus(); return; }
+    $("qName").blur();
+    bkStep(2);
   }
   function bkData(day) {
     if (day === bkToday() && roomsData) {
@@ -3445,7 +3498,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   function openBook(r) {
     const base = Date.parse(bkToday() + "T12:00:00+08:00");
     const list = Array.from({ length: BK_DAYS }, (x, i) => tpeDay(base + i * 86400000));
-    bk = { room: { key: r.key, name: r.name }, list: list, day: list[0], days: new Map(), start: -1, len: 60, busy: false, req: null, isNow: false, autoNext: false };
+    bk = { room: { key: r.key, name: r.name }, list: list, day: list[0], days: new Map(), start: -1, len: 60, busy: false, req: null, isNow: false, autoNext: false, step: 1 };
     // 今天已經沒有可以選的時間（快 20:00 了、或都滿了）：從明天開始，日期上方說一聲（v6.3）
     if (!bkSlots(list[0]).slots.some((x) => x.ok) && !bkNowOk()) { bk.day = list[1]; bk.autoNext = true; }
     quickRoom = null; bkMode(true);
@@ -3578,6 +3631,11 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   function bkButton() {
     if (!bk) return;
     const d = bkData(bk.day), none = !pickedIds().length;
+    if (bk.step === 1) {
+      $("qStart").disabled = bk.busy || bk.start < 0 || d.st !== "ok";
+      $("qStart").textContent = bk.start < 0 ? (d.st === "ok" ? "這天沒有空檔，換一天" : "讀取中…") : "下一步";
+      return;
+    }
     $("qStart").disabled = bk.busy || bk.start < 0 || d.st !== "ok" || none;
     $("qStart").textContent = bk.busy ? "預約中…" : bk.start < 0 ? (d.st === "ok" ? "這天沒有空檔，換一天" : "讀取中…") : none ? "請勾選與會人員" :
       "預約 " + (bk.day === bkToday() ? "今天 " : bk.day === bk.list[1] ? "明天 " : bkMD(bk.day) + " ") + mHM(bk.start) + "–" + mHM(bk.start + bk.len);
@@ -3585,10 +3643,10 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   async function bookGo() {
     if (!bk || bk.busy || bk.start < 0) return;
     const raw = $("qName").value.trim();
-    if (!cleanName(raw)) { $("qErr").textContent = "請先輸入會議名稱"; $("qName").focus(); return; }
+    if (!cleanName(raw)) { bkStep(1); $("qErr").textContent = "請先輸入會議名稱"; return; }
     if (!pickedIds().length) { bkButton(); return; }
     // 「現在」：送出時再取一次現在的分鐘（選單開著放了一陣子也不會送出過去的時間）
-    if (bk.isNow) { bkFixStart(); bkRender(); if (!bk.isNow) { $("qErr").textContent = "現在這間已經不能用了，請換一個時間"; return; } }
+    if (bk.isNow) { bkFixStart(); bkRender(); if (!bk.isNow) { bkStep(1); $("qErr").textContent = "現在這間已經不能用了，請換一個時間"; return; } }
     const b = bk, day = b.day, s = b.start, len = b.len, ids = pickedIds();
     // 同樣的內容再按一次（上次逾時、連線失敗）沿用同一個 requestId：後端不會重複預約
     const sig = [b.room.key, day, s, len, raw, ids.join(",")].join("|");
@@ -3627,6 +3685,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     const why = v.reject || v.fail;
     log("沒有預約到" + what + "：" + why);
     if (bk !== b) { toast("沒有預約到" + what + "：" + why, true); return; }
+    if (v.roomBusy || v.tooLate) bkStep(1); // v6.6 時間的問題回第 1 步改時間
     $("qErr").textContent = v.needMembers ? "至少選 1 人（記得勾自己）" : v.roomBusy || v.tooLate ? why + (v.roomBusy ? "，請換一個時間" : "") : "沒有預約到：" + why;
     if (v.roomBusy) bkLoad(day);   // 重新讀那天，讓使用者看到被誰占了、改時間
     else { bkFixStart(); bkRender(); }
@@ -3935,7 +3994,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     const t = { name: p.raw, quick: { memberIds: p.ids, room: quickRoom } };
     startMeeting(t); // 點擊當下呼叫（中間不能 await）：從會議室開的也一樣，startMeeting 先啟動音訊才等預約結果
   }
-  $("qStart").addEventListener("click", () => (bk ? bookGo() : askQuick(true)));
+  $("qStart").addEventListener("click", () => (bk ? (bk.step === 1 ? bkNext() : bookGo()) : askQuick(true)));
   $("qNoPick").addEventListener("click", () => askQuick(false));
   $("btnQConfirm").addEventListener("click", quickGo);
   // 返回修改：只關確認選單，臨時會議畫面上的名稱和勾選的人都還在
@@ -4062,7 +4121,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     if (screen !== "file") return;
     const st = fs.step;
     $("fileTitle").textContent = ["", "上傳錄音檔", "是哪一場？", fs.result === "done" ? "上傳完成" : "確認上傳"][st];
-    $("fileBack").textContent = st === 1 || fs.result ? (fs.result ? "首頁" : "取消") : "上一步";
+    $("fileBack").hidden = fs.result === "done" || fs.result === "dup"; // v6.6 傳完只留底部「完成」
     $("fileBack").disabled = fs.busy;
     $("fileStep1").hidden = st !== 1; $("fileStep2").hidden = st !== 2; $("fileStep3").hidden = st !== 3;
     let next = "下一步", can = false;
@@ -4130,7 +4189,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
         $("fileDoneNote").textContent = st[3];
         $("fileDoneSmall").textContent = st[4] || ""; $("fileDoneSmall").hidden = !st[4];
       }
-      next = fs.result === "done" || fs.result === "dup" ? "回到首頁" : fs.result === "fail" ? "全部重送" : fs.busy ? "上傳中…" : "上傳";
+      next = fs.result === "done" || fs.result === "dup" ? "完成" : fs.result === "fail" ? "全部重送" : fs.busy ? "上傳中…" : "上傳";
       can = !fs.busy;
     }
     $("fileNext").textContent = next;
