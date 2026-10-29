@@ -55,8 +55,10 @@
      v6.6（10/29）：v6.5 留下的 6 項（Jacky「全部 6 項都做」；個人 Claude 改）：首頁「最近的錄音」只在還沒傳完時出現（改叫「還沒傳完」）；
            錄音中不放設定齒輪；「取消這場」改「丟掉錄音」；預約分兩步（時間和名稱 →「下一步」→ 選人）；
            橫拿時臨時會議、預約選單分左右兩欄，錄音中計時器縮小，底部分頁列壓矮；返回鍵一律叫「返回」，上傳錄音檔傳完只留「完成」
+     v6.6.1（10/29）：從錄音分頁開的臨時會議標題「臨時會議（不占會議室）」；重複預約確認寫出這次要訂的房間；拿掉 qNoPick；
+           讀不到今天的會議時自動重讀的間隔逐次加長（5、10、20、40 秒，最多 60 秒）；沒有會議室的臨時會議延長提示寫「日曆也延長到」
      放在公開的 GitHub Pages：不能寫死任何網址、key、email、會議內容
-     最後更新: 2026/10/28 -->
+     最後更新: 2026/10/29 -->
 <html lang="zh-Hant-TW">
 <head>
 <meta charset="utf-8">
@@ -716,7 +718,6 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     <div class="sheet-foot">
       <p class="msg ng" id="qErr"></p>
       <button class="btn primary" id="qStart">開始錄音</button>
-      <button class="text-btn" id="qNoPick" hidden>不選人直接開始</button>
     </div>
   </div>
 </div>
@@ -856,7 +857,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
 <script>
 (function () {
   "use strict";
-  const VERSION = "record v6.6（10/29）";
+  const VERSION = "record v6.6.1（10/29）";
   const $ = (id) => document.getElementById(id);
   const pad = (n) => String(n).padStart(2, "0");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1756,6 +1757,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
 
   // 讀取中再呼叫：回傳同一個讀取（不重複送）；結果 "ok"｜"fail"｜"nocfg"
   let evPromise = null, evLoadedAt = 0;
+  let evRetryN = 0, evRetryAt = 0, evRetryTimer = 0; // v6.6.1 房間選單自動重讀今天的會議：失敗後等多久（見 renderRecMine）
   // fresh（v6.4）：按重新讀取、自己剛預約或取消之後，後端不用快取
   function loadEvents(why, fresh) {
     if (evPromise && fresh) return evPromise.then(() => loadEvents(why, true));
@@ -1771,7 +1773,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     if (v.ok) {
       events = v.r.events.map((e) => ({ id: String(e.id), title: String(e.title || "（沒有標題）"), start: Date.parse(e.start), end: Date.parse(e.end), guests: typeof e.guests === "number" ? e.guests : null }))
         .filter((e) => e.id && isFinite(e.start) && isFinite(e.end));
-      evState = "ok"; evFailed = false;
+      evState = "ok"; evFailed = false; evRetryN = 0; evRetryAt = 0;
       log("今天的會議 " + events.length + " 場（" + why + "）");
     } else {
       evFailed = true; evErr = v.reject || v.fail;
@@ -2023,8 +2025,8 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     bkMode(null); // v6.1：同一個選單也當預約用，回到臨時會議的樣子
     quickRoom = room && room.key ? room : null;
     // v6.4：從錄音分頁開的不會預約會議室，要說清楚（以為有占到會議室，別人會闖進來）
-    // v6.5 標題寫在哪間；只能用到某個時間才多一行
-    $("qHead").textContent = quickRoom ? quickRoom.name : "臨時會議";
+    // v6.5 標題寫在哪間；只能用到某個時間才多一行；v6.6.1 從錄音分頁開的標題直接寫不占會議室（不加小字）
+    $("qHead").textContent = quickRoom ? quickRoom.name : "臨時會議（不占會議室）";
     $("qRoomNote").hidden = !(quickRoom && quickRoom.until);
     $("qRoomNote").textContent = quickRoom && quickRoom.until ? "用到 " + HM(localTime(quickRoom.until)) : "";
     $("qName").value = ""; $("qSearch").value = ""; $("qErr").textContent = ""; qDept = "";
@@ -2338,7 +2340,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   // room（v6.0，從會議室開的）：{ key, name, until }：帶 room 預約那間；下一場預約前就要結束，minutes 縮到那時（後端整段時間都要空著）
   function createEvent(title, memberIds, room) {
     const requestId = prefixOf(new Date(), cleanName(title)) + "_" + Math.random().toString(36).slice(2).padEnd(6, "0").slice(0, 6);
-    const res = { eventId: "", mine: null, requestId: requestId };
+    const res = { eventId: "", mine: null, requestId: requestId, room: room ? room.key : "" };
     res.attached = new Promise((r) => { res.attach = r; }); // newMeeting 建好這場時呼叫
     const body = { action: "createEvent", title: title.slice(0, 60), minutes: QUICK_MS / MIN, requestId: requestId };
     if (memberIds.length) body.memberIds = memberIds; // v5.3 不再送 memberId（拿掉「我是誰」）：自己要在選人時勾
@@ -2408,7 +2410,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     const ev = t.ev || null;
     const m = { name: t.name, prefix: prefixOf(now, uniqueName(now, cleanName(t.name) || "會議")), start: now.toISOString(),
       t0: Date.now(), createdAt: Date.now(), eventId: ev ? ev.id : "", eventP: quickRes ? quickRes.done : null, ownReq: quickRes ? quickRes.requestId : ownReqOf(ev),
-      evStart: ev ? ev.start : 0, evEnd: ev ? ev.end : 0, quick: !!quickRes,
+      evStart: ev ? ev.start : 0, evEnd: ev ? ev.end : 0, quick: !!quickRes, noRoom: !!quickRes && !quickRes.room, // v6.6.1 從錄音分頁開的（沒有會議室）
       // 時間到提醒的基準：日曆結束時間；臨時會議、沒有日曆、補錄已結束的會議 → 從現在起 60 分鐘；在會議室開、下一場更早開始 → 到那時（v6.0）
       endAt: ev && ev.end > Date.now() ? ev.end : Math.min(Date.now() + QUICK_MS, t.quick && t.quick.room && t.quick.room.until ? Date.now() + t.quick.room.until - roomNow() : Infinity),
       segments: 0, segNo: 0, saves: [], status: "recording", end: "", endReason: "", completeSent: false, remind: 0 };
@@ -2627,7 +2629,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
       if (v.ok) {
         const end = Date.parse(v.r.end);
         log("日曆活動延長到 " + hm(end) + (v.r.cut ? "（後面有人預約，只能到那時）" : ""));
-        toast(v.r.cut ? "會議室 " + hm(end) + " 後有人預約，只延長到那時" : "會議室也延長到 " + hm(end));
+        toast(v.r.cut ? "會議室 " + hm(end) + " 後有人預約，只延長到那時" : (m.noRoom ? "日曆也延長到 " : "會議室也延長到 ") + hm(end)); // v6.6.1 沒有會議室的只延長日曆
         loadRooms("延長", true);
         return;
       }
@@ -3314,7 +3316,8 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   }
   // 「10/29（週四）13:00–14:00 設計審查」
   const bookWhen = (b) => (tpeDay(b.start) === bkToday() ? "今天 " : bkMD(tpeDay(b.start)) + "（" + bkWd(tpeDay(b.start)).slice(1) + "）") + tpeHM(b.start) + "–" + tpeHM(b.end);
-  const bookText = (b) => bkMD(tpeDay(b.start)) + "（" + bkWd(tpeDay(b.start)) + "）" + tpeHM(b.start) + "–" + tpeHM(b.end) + (b.title ? " " + b.title : "");
+  const bookTime = (b) => bkMD(tpeDay(b.start)) + "（" + bkWd(tpeDay(b.start)) + "）" + tpeHM(b.start) + "–" + tpeHM(b.end);
+  const bookText = (b) => bookTime(b) + (b.title ? " " + b.title : "");
   const bcBusy = new Set(); // 取消中的 eventId（按鈕停用，不會按兩次）
   // 送 deleteEvent；回傳 true＝取消了（或本來就不在了）
   async function cancelBooking(b, how) {
@@ -3379,7 +3382,16 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     $("rsRec").hidden = !b;
     if (!b) return;
     $("rsRec").textContent = "開始錄音";
-    if (!(events || []).some((e) => e.id === b.eventId) && !evPromise) loadEvents("開始錄這場", true).then(() => { if (roomSel) renderRoomSheet(); });
+    if (!(events || []).some((e) => e.id === b.eventId) && !evPromise && Date.now() >= evRetryAt) loadEvents("開始錄這場", true).then((res) => {
+      // v6.6.1 讀不到今天的會議：下次自動重讀的間隔逐次加長（5、10、20、40 秒，最多 60 秒）；讀到就歸零（fetchEvents）
+      if (res === "fail") {
+        const wait = Math.min(60, 5 * 2 ** evRetryN) * 1000;
+        evRetryN++; evRetryAt = Date.now() + wait;
+        log("讀不到今天的會議，" + wait / 1000 + " 秒後再讀");
+        clearTimeout(evRetryTimer); evRetryTimer = setTimeout(() => { if (roomSel) renderRoomSheet(); }, wait);
+      }
+      if (roomSel) renderRoomSheet();
+    });
   }
   $("rsRec").addEventListener("click", () => {
     const b = recMine, ev = b && events && events.find((e) => e.id === b.eventId);
@@ -3430,7 +3442,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   function bkMode(on) {
     if (!on) bk = null;
     $("qHead").textContent = bk ? "預約 " + bk.room.name : "臨時會議";
-    $("bkBox").hidden = !bk; $("qNoPick").hidden = true; // v6.5 只留一顆開始錄音
+    $("bkBox").hidden = !bk;
     $("qName").placeholder = "會議名稱";
     bkStepUI();
   }
@@ -3655,7 +3667,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     const dup = myBookings().find((x) => x.start < t1 && t0 < x.end);
     if (dup && b.dupOk !== sig) {
       b.dupAsk = sig;
-      $("dupText").textContent = dup.roomName + " " + bookText(dup);
+      $("dupText").textContent = "已經訂了 " + dup.roomName + " " + bookTime(dup) + "，還要訂 " + b.room.name + " 嗎？"; // v6.6.1 寫出這次要訂的房間
       $("dupConfirm").hidden = false;
       return;
     }
@@ -3995,7 +4007,6 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     startMeeting(t); // 點擊當下呼叫（中間不能 await）：從會議室開的也一樣，startMeeting 先啟動音訊才等預約結果
   }
   $("qStart").addEventListener("click", () => (bk ? (bk.step === 1 ? bkNext() : bookGo()) : askQuick(true)));
-  $("qNoPick").addEventListener("click", () => askQuick(false));
   $("btnQConfirm").addEventListener("click", quickGo);
   // 返回修改：只關確認選單，臨時會議畫面上的名稱和勾選的人都還在
   $("btnQBack").addEventListener("click", () => { quickPending = null; $("quickConfirm").hidden = true; });
