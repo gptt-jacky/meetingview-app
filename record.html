@@ -57,6 +57,10 @@
            橫拿時臨時會議、預約選單分左右兩欄，錄音中計時器縮小，底部分頁列壓矮；返回鍵一律叫「返回」，上傳錄音檔傳完只留「完成」
      v6.6.1（10/29）：從錄音分頁開的臨時會議標題「臨時會議（不占會議室）」；重複預約確認寫出這次要訂的房間；拿掉 qNoPick；
            讀不到今天的會議時自動重讀的間隔逐次加長（5、10、20、40 秒，最多 60 秒）；沒有會議室的臨時會議延長提示寫「日曆也延長到」
+     v6.6.2（10/29）：Android 點會議室選單一打開就被同一下的 click 關掉（點底 400ms 內不關、放大前確認選單還開著）；
+           重複預約確認只留一句；沒有會議室時延長失敗寫「日曆沒有延長」；讀不到成員名單的提示改寫；
+           會議室標籤和已經放好的標籤（+N）留 3px 間隙；選單很高時放大的那間往上挪，底部不被選單蓋住；
+           小 iPhone 橫拿首頁：會議的時間、人數併到名稱同一行，「開始前」提示排成一列（不捲就看得完 3 場）
      放在公開的 GitHub Pages：不能寫死任何網址、key、email、會議內容
      最後更新: 2026/10/29 -->
 <html lang="zh-Hant-TW">
@@ -463,6 +467,13 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   .bar { padding-top: 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
   body.tabbed .bar { padding-bottom: 6px; }
   .bar .btn { min-height: 44px; padding: 9px 16px; }
+  /* v6.6.2 小 iPhone 橫拿（667×375）首頁不捲就看得完 3 場：時間、人數併到名稱同一行；「開始前」提示排成一列 */
+  button.ev { grid-template-columns: 3.4em minmax(0, 1fr) auto auto; }
+  .ev .t { grid-row: 1; padding-top: 0; }
+  .ev .sub { grid-column: 3; grid-row: 1; flex-wrap: nowrap; white-space: nowrap; }
+  .ev .ck { grid-column: 4; grid-row: 1; }
+  #tipsCard { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding-top: 8px; padding-bottom: 8px; }
+  #tipsCard > * + * { border-top: 0; }
 }
 #roomsScr .nav .ttl { margin-right: 8px; color: var(--fg); font-size: 17px; font-weight: 700; }
 </style>
@@ -838,7 +849,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
 <div class="sheet action" id="dupConfirm" hidden>
   <div class="panel action">
     <div class="group">
-      <div class="t"><b style="color:var(--fg);font-size:15px">這段時間你已經預約了</b><span id="dupText" style="display:block;margin-top:4px"></span></div>
+      <div class="t"><span id="dupText"></span></div>
       <button class="bold" id="btnDupGo">還是要預約</button></div>
     <div class="group"><button class="bold" id="btnDupBack">返回</button></div>
   </div>
@@ -857,7 +868,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
 <script>
 (function () {
   "use strict";
-  const VERSION = "record v6.6.1（10/29）";
+  const VERSION = "record v6.6.2（10/29）";
   const $ = (id) => document.getElementById(id);
   const pad = (n) => String(n).padStart(2, "0");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -2008,7 +2019,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     box.hidden = !shown.length;
     let msg = "", cls = "warn";
     if (!list.length) {
-      msg = memState === "loading" ? "讀取成員名單中…" : "讀不到成員名單" + (memErr ? "（" + memErr + "）" : "") + (bk ? "：預約要選人，請稍後再試" : "：可以不選人直接開始");
+      msg = memState === "loading" ? "讀取成員名單中…" : "讀不到成員名單" + (memErr ? "（" + memErr + "）" : "") + (bk ? "：預約要選人，請稍後再試" : "：不選人也可以直接按開始錄音");
       cls = memState === "loading" ? "" : "ng";
     } else if (memState === "stale") msg = "更新名單失敗，用手機上次的名單";
     else if (!shown.length) msg = q ? "找不到「" + q + "」" : "這裡沒有人";
@@ -2635,7 +2646,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
       }
       if (v.roomBusy) { log("沒有延長日曆活動：" + v.reject); toast("會議室後面有人預約，沒辦法延長；錄音照常", true); return; }
       log("沒有延長日曆活動：" + (v.reject || v.fail));
-      if (!(v.reject && OLD_BACKEND.test(v.reject))) toast("會議室沒有延長（" + (v.reject || v.fail) + "）", true);
+      if (!(v.reject && OLD_BACKEND.test(v.reject))) toast((m.noRoom ? "日曆沒有延長（" : "會議室沒有延長（") + (v.reject || v.fail) + "）", true); // v6.6.2 沒有會議室的寫日曆
     }).catch((e) => log("延長日曆活動失敗（" + e.message + "）"));
   }
 
@@ -3064,7 +3075,8 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
         const box = { l: x - w / 2, r: x + w / 2, t: y, b: y + h };
         let cost = (k === 2 ? w * h * 0.35 : 0) + n * w * h * 0.05; // 放在房間上會蓋到小人、偏離房間：沒地方才這樣放
         rects.forEach((o, j) => { if (j !== i) cost += over(box, o); });
-        placed.forEach((o) => { cost += 30 * over(box, o); }); // 疊到別的標籤（字被蓋住）比蓋到房間嚴重得多（v6.1：4 → 30）
+        // 疊到別的標籤（字被蓋住）比蓋到房間嚴重得多（v6.1：4 → 30）；v6.6.2 留 3px 間隙（量的大小和畫出來差 1、2px，貼著放會疊到「+N」）
+        placed.forEach((o) => { cost += 30 * over(box, { l: o.l - 3, r: o.r + 3, t: o.t - 3, b: o.b + 3 }); });
         if (inside && (box.t < 0 || box.b > fb)) cost += w * h * (sel ? 20 : 0.6);
         if (!best || cost < best.cost - 1) best = { box: box, cost: cost };
       }));
@@ -3154,7 +3166,9 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     }
     const vh = Math.max(120, vb - vt);
     const S = Math.min(Math.max(Math.min(vw * 0.7 / (bx.x1 - bx.x0), (vh - 60) * 0.75 / (bx.y1 - bx.y0)), map.fit.S), Math.max(map.fit.S * 6, 2.5));
-    animateTo({ S: S, TX: vw / 2 - (bx.x0 + bx.x1) / 2 * S, TY: vt + 30 + (vh - 30) / 2 - (bx.y0 + bx.y1) / 2 * S });
+    // v6.6.2 選單很高、倍率已經是總覽（375×667 的會議室 D）：置中會讓房間底被選單蓋住一點，往上挪到底部露出來（放得下的話）
+    const TY = Math.max(Math.min(vt + 30 + (vh - 30) / 2 - (bx.y0 + bx.y1) / 2 * S, vb - 4 - bx.y1 * S), vt + 4 - bx.y0 * S);
+    animateTo({ S: S, TX: vw / 2 - (bx.x0 + bx.x1) / 2 * S, TY: TY });
   }
 
   // 手勢（v6.4，10/28 Jacky「不需要可以拉，不給拉才是對的」）：地圖不能拖、不能縮放，總覽固定；點房間自動放大到那間，關掉選單縮回總覽
@@ -3198,13 +3212,15 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
   window.addEventListener("resize", onMapResize);
 
   // ----- 底部選單 -----
+  // v6.6.2 Android Chrome 在 pointerup（這裡打開選單）之後才送同一下的 click，落在選單的底上會馬上關掉：打開 400ms 內點底不算
+  let roomOpenAt = 0;
   function openRoom(key) {
     if (!roomsData || !roomsData.rooms.some((r) => r.key === key)) return;
-    roomSel = key;
+    roomSel = key; roomOpenAt = Date.now();
     $("rsMsg").textContent = "";
     $("roomSheet").hidden = false;
     renderRoomSheet(); markSel();
-    requestAnimationFrame(() => zoomToRoom(key)); // 等底部選單排好版（zoomToRoom 要量選單上緣）
+    requestAnimationFrame(() => { if (roomSel === key) zoomToRoom(key); }); // 等底部選單排好版（zoomToRoom 要量選單上緣）；v6.6.2 選單已經關了就不放大
   }
   function closeRoom(zoomOut) {
     roomSel = "";
@@ -3275,7 +3291,7 @@ html.rooms-on, html.rooms-on body { overscroll-behavior: none; }
     openQuick(room);
   });
   $("rsClose").addEventListener("click", () => closeRoom());
-  $("roomSheet").addEventListener("click", (e) => { if (e.target === $("roomSheet")) closeRoom(); });
+  $("roomSheet").addEventListener("click", (e) => { if (e.target === $("roomSheet") && Date.now() - roomOpenAt >= 400) closeRoom(); });
   // 這間剛被預約了（後端 roomBusy）：說原因、重新讀取、打開那間給使用者看（不錄音）
   async function roomBusyNow(room, why) {
     const text = why || "這間剛被預約了";
